@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
@@ -8,6 +8,35 @@ import asyncio
 import json
 
 app = FastAPI()
+
+
+# Well-known endpoint for agent discovery (following the format from example)
+@app.get("/.well-known/agent.json")
+def get_agent_info(request: Request):
+    """Return agent information in the expected format"""
+    # Return information about the hub itself as an agent
+    hub_agent = {
+        "capabilities": {
+            "streaming": True
+        },
+        "defaultInputModes": ["text"],
+        "defaultOutputModes": ["text"],
+        "description": "OSU Genesis Hub for agent coordination and management",
+        "name": "OSU Genesis Hub",
+        "skills": [
+            {
+                "description": "Manages and coordinates AI agents",
+                "examples": ["list agents", "register agent", "chat with agent"],
+                "id": "agent_management",
+                "name": "Agent Management",
+                "tags": ["agent", "coordination", "management"]
+            }
+        ],
+        "supportsAuthenticatedExtendedCard": True,
+        "url": f"{request.url.scheme}://{request.url.netloc}",
+        "version": "1.0.0"
+    }
+    return hub_agent
 
 # Allow all origins for simplicity, but you should restrict this in production
 app.add_middleware(
@@ -203,6 +232,97 @@ def register_agent(agent_request: RegisterAgentRequest):
     
     agents_db.append(agent.dict())
     return agent
+
+
+# Endpoint to register an agent using its .well-known/agent.json file
+@app.post("/agents/register-by-url", response_model=Agent)
+def register_agent_by_url(agent_url: str):
+    """Register a new agent by fetching its .well-known/agent.json file"""
+    import requests
+    from urllib.parse import urljoin, urlparse
+    
+    if not agent_url:
+        raise HTTPException(status_code=400, detail="Agent URL is required")
+    
+    # Ensure the URL has proper scheme
+    if not agent_url.startswith(('http://', 'https://')):
+        agent_url = 'https://' + agent_url
+    
+    # Construct the well-known URL
+    parsed_url = urlparse(agent_url)
+    well_known_url = f"{parsed_url.scheme}://{parsed_url.netloc}/.well-known/agent.json"
+    
+    try:
+        response = requests.get(well_known_url, timeout=10)
+        response.raise_for_status()
+        
+        agent_data = response.json()
+        
+        # Map the well-known format to our internal Agent model
+        # Extract name and description from the well-known format
+        name = agent_data.get("name", "Unknown Agent")
+        description = agent_data.get("description", "")
+        endpoint = agent_data.get("url", agent_url)  # Use the provided URL if no explicit endpoint
+        
+        # Generate new ID for the agent in our system
+        agent_id = str(uuid.uuid4())
+        
+        # Create agent with fetched data
+        agent = Agent(
+            id=agent_id,
+            name=name,
+            description=description,
+            endpoint=endpoint,
+            input_schema=agent_data.get("input_schema", {"type": "object", "properties": {"message": {"type": "string"}}}),
+            output_schema=agent_data.get("output_schema", {"type": "object", "properties": {"response": {"type": "string"}}})
+        )
+        
+        agents_db.append(agent.dict())
+        return agent
+        
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=400, detail=f"Error fetching agent's .well-known/agent.json file: {str(e)}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON response from agent's .well-known/agent.json file: {str(e)}")
+
+
+# Endpoint to fetch an agent's .well-known/agent.json file
+@app.get("/agents/fetch-well-known")
+def fetch_agent_well_known(agent_url: str):
+    """Fetch an agent's .well-known/agent.json file"""
+    import requests
+    from urllib.parse import urljoin, urlparse
+    
+    if not agent_url:
+        raise HTTPException(status_code=400, detail="Agent URL is required")
+    
+    # Ensure the URL has proper scheme
+    if not agent_url.startswith(('http://', 'https://')):
+        agent_url = 'https://' + agent_url
+    
+    # Construct the well-known URL
+    parsed_url = urlparse(agent_url)
+    well_known_url = f"{parsed_url.scheme}://{parsed_url.netloc}/.well-known/agent.json"
+    
+    try:
+        response = requests.get(well_known_url, timeout=10)
+        response.raise_for_status()
+        
+        agent_data = response.json()
+        
+        # Convert the well-known format to our internal Agent model format for display
+        return {
+            "id": "temp_id",  # ID will be generated during actual registration
+            "name": agent_data.get("name", "Unknown Agent"),
+            "description": agent_data.get("description", ""),
+            "endpoint": agent_data.get("url", agent_url),
+            "input_schema": agent_data.get("input_schema", {"type": "object", "properties": {"message": {"type": "string"}}}),
+            "output_schema": agent_data.get("output_schema", {"type": "object", "properties": {"response": {"type": "string"}}})
+        }
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=400, detail=f"Error fetching agent's .well-known/agent.json file: {str(e)}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON response from agent's .well-known/agent.json file: {str(e)}")
 
 def generate_agent_response(user_message: str, agent: dict) -> str:
     """Generate response from an agent based on user message"""

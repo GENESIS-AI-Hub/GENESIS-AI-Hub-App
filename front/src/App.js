@@ -10,6 +10,9 @@ function App() {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [newChatTitle, setNewChatTitle] = useState('');
+  const [showAgentRegistration, setShowAgentRegistration] = useState(false);
+  const [agentRegistrationUrl, setAgentRegistrationUrl] = useState('');
+  const [agentRegistrationStatus, setAgentRegistrationStatus] = useState('');
   const messagesEndRef = useRef(null);
 
   // Backend API base URL
@@ -178,6 +181,64 @@ function App() {
     return agent ? agent.name : agentId;
   };
 
+  const registerAgentByUrl = async () => {
+    if (!agentRegistrationUrl.trim()) {
+      setAgentRegistrationStatus('Please enter an agent URL');
+      return;
+    }
+
+    setAgentRegistrationStatus('Registering agent...');
+    try {
+      const response = await fetch(`${BACKEND_URL}/agents/register-by-url`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ agent_url: agentRegistrationUrl.trim() }),
+      });
+
+      if (response.ok) {
+        const registeredAgent = await response.json();
+        setAgentRegistrationStatus(`Successfully registered agent: ${registeredAgent.name}`);
+        // Refresh the agents list
+        fetchAgents();
+        // Clear the input
+        setAgentRegistrationUrl('');
+        setTimeout(() => {
+          setAgentRegistrationStatus('');
+          setShowAgentRegistration(false);
+        }, 3000);
+      } else {
+        const errorData = await response.json();
+        setAgentRegistrationStatus(`Error: ${errorData.detail || 'Failed to register agent'}`);
+      }
+    } catch (error) {
+      setAgentRegistrationStatus(`Error: ${error.message}`);
+    }
+  };
+
+  const handleTestWellKnown = async () => {
+    if (!agentRegistrationUrl.trim()) {
+      setAgentRegistrationStatus('Please enter an agent URL');
+      return;
+    }
+
+    setAgentRegistrationStatus('Testing .well-known file...');
+    try {
+      const response = await fetch(`${BACKEND_URL}/agents/fetch-well-known?agent_url=${encodeURIComponent(agentRegistrationUrl.trim())}`);
+      
+      if (response.ok) {
+        const agentData = await response.json();
+        setAgentRegistrationStatus(`Found agent: ${agentData.name} - ${agentData.description}`);
+      } else {
+        const errorData = await response.json();
+        setAgentRegistrationStatus(`Error: ${errorData.detail || 'Failed to fetch .well-known file'}`);
+      }
+    } catch (error) {
+      setAgentRegistrationStatus(`Error: ${error.message}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* Sidebar */}
@@ -186,14 +247,86 @@ function App() {
           <h1 className="text-xl font-bold text-blue-900">OSU Genesis Hub</h1>
         </div>
         
-        <div className="p-4">
+        <div className="p-4 space-y-2">
           <button 
             onClick={handleNewChat}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
           >
             + New Chat
           </button>
+          <button
+            onClick={() => setShowAgentRegistration(true)}
+            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
+          >
+            + Register Agent
+          </button>
         </div>
+
+        {/* Agent Registration Modal */}
+        {showAgentRegistration && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">Register New Agent</h3>
+                  <button 
+                    onClick={() => {
+                      setShowAgentRegistration(false);
+                      setAgentRegistrationStatus('');
+                    }}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    ✕
+                  </button>
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Agent URL (with .well-known/a2a-agent)
+                  </label>
+                  <input
+                    type="text"
+                    value={agentRegistrationUrl}
+                    onChange={(e) => setAgentRegistrationUrl(e.target.value)}
+                    placeholder="https://agent-domain.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                
+                <div className="flex space-x-2 mb-4">
+                  <button
+                    onClick={handleTestWellKnown}
+                    className="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
+                  >
+                    Test .well-known
+                  </button>
+                  <button
+                    onClick={registerAgentByUrl}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
+                  >
+                    Register
+                  </button>
+                </div>
+                
+                {agentRegistrationStatus && (
+                  <div className={`text-sm p-2 rounded ${
+                    agentRegistrationStatus.startsWith('Error') 
+                      ? 'bg-red-100 text-red-700' 
+                      : agentRegistrationStatus.includes('Successfully') 
+                        ? 'bg-green-100 text-green-700' 
+                        : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {agentRegistrationStatus}
+                  </div>
+                )}
+                
+                <div className="mt-4 text-xs text-gray-500">
+                  The agent must have a .well-known/a2a-agent endpoint that returns agent information in JSON format.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* New Chat Form */}
         {(!activeChat || newChatTitle) && (
