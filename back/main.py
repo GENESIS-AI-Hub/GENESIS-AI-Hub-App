@@ -1,11 +1,15 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import uuid
 from datetime import datetime
 import asyncio
 import json
+
+# JSON-RPC imports
+from jsonrpcserver import method, Result, Success, Error as JSONRPCError
+import jsonrpcserver
 
 app = FastAPI()
 
@@ -52,6 +56,122 @@ chats_db: Dict[str, dict] = {}
 messages_db: Dict[str, List[dict]] = {}
 agents_db: List[dict] = []
 
+# Define JSON-RPC methods
+@method
+def SendMessageRequest(params: Dict[str, Any]) -> Result:
+    """Handle JSON-RPC SendMessageRequest"""
+    try:
+        chat_id = params.get('chat_id')
+        message = params.get('message', params.get('input', ''))
+        files = params.get('files', [])
+        
+        if not chat_id:
+            return JSONRPCError(code=-32602, message="Missing chat_id parameter")
+        
+        # Add user message to the chat
+        user_message = Message(
+            id=str(uuid.uuid4()),
+            chat_id=chat_id,
+            role="user",
+            content=message,
+            timestamp=datetime.now(),
+            files=files if files else None
+        )
+        
+        messages_db[chat_id].append(user_message.dict())
+        
+        # Get the agent for this chat
+        chat_agent_id = chats_db[chat_id]["agent_id"]
+        agent = next((a for a in agents_db if a["id"] == chat_agent_id), None)
+        if not agent:
+            return JSONRPCError(code=404, message="Agent not found")
+        
+        # Generate response from agent
+        response_content = generate_agent_response(message, agent)
+        
+        # Add assistant message
+        assistant_message = Message(
+            id=str(uuid.uuid4()),
+            chat_id=chat_id,
+            role="assistant",
+            content=response_content,
+            timestamp=datetime.now()
+        )
+        
+        messages_db[chat_id].append(assistant_message.dict())
+        
+        # Update chat timestamp
+        chats_db[chat_id]["updated_at"] = datetime.now()
+        
+        return Success(assistant_message.dict())
+    except Exception as e:
+        return JSONRPCError(code=-32603, message=f"Internal error: {str(e)}")
+
+
+@method
+def SendStreamingMessageRequest(params: Dict[str, Any]) -> Result:
+    """Handle JSON-RPC SendStreamingMessageRequest"""
+    # For now, just return the same as SendMessageRequest since streaming is not fully implemented
+    return SendMessageRequest(params)
+
+
+@method
+def GetTaskRequest(params: Dict[str, Any]) -> Result:
+    """Handle JSON-RPC GetTaskRequest"""
+    try:
+        task_id = params.get('task_id')
+        if not task_id:
+            return JSONRPCError(code=-32602, message="Missing task_id parameter")
+        
+        # For now, return a simple response
+        return Success({"task_id": task_id, "status": "completed", "result": "Task result placeholder"})
+    except Exception as e:
+        return JSONRPCError(code=-32603, message=f"Internal error: {str(e)}")
+
+
+@method
+def CancelTaskRequest(params: Dict[str, Any]) -> Result:
+    """Handle JSON-RPC CancelTaskRequest"""
+    try:
+        task_id = params.get('task_id')
+        if not task_id:
+            return JSONRPCError(code=-32602, message="Missing task_id parameter")
+        
+        # For now, return a simple response
+        return Success({"task_id": task_id, "cancelled": True})
+    except Exception as e:
+        return JSONRPCError(code=-32603, message=f"Internal error: {str(e)}")
+
+
+@method
+def SetTaskPushNotificationConfigRequest(params: Dict[str, Any]) -> Result:
+    """Handle JSON-RPC SetTaskPushNotificationConfigRequest"""
+    try:
+        # For now, just acknowledge the request
+        return Success({"status": "config_set"})
+    except Exception as e:
+        return JSONRPCError(code=-32603, message=f"Internal error: {str(e)}")
+
+
+@method
+def GetTaskPushNotificationConfigRequest(params: Dict[str, Any]) -> Result:
+    """Handle JSON-RPC GetTaskPushNotificationConfigRequest"""
+    try:
+        # For now, return a default configuration
+        return Success({"config": {"enabled": True, "endpoint": ""}})
+    except Exception as e:
+        return JSONRPCError(code=-32603, message=f"Internal error: {str(e)}")
+
+
+@method
+def TaskResubscriptionRequest(params: Dict[str, Any]) -> Result:
+    """Handle JSON-RPC TaskResubscriptionRequest"""
+    try:
+        # For now, just acknowledge the request
+        return Success({"status": "resubscribed"})
+    except Exception as e:
+        return JSONRPCError(code=-32603, message=f"Internal error: {str(e)}")
+
 # Data models
 class Chat(BaseModel):
     id: str
@@ -90,6 +210,27 @@ class RegisterAgentRequest(BaseModel):
     endpoint: Optional[str] = None
     input_schema: Optional[dict] = None
     output_schema: Optional[dict] = None
+
+# JSON-RPC endpoint
+@app.post("/jsonrpc")
+async def jsonrpc_endpoint(request: Request):
+    """Handle JSON-RPC requests"""
+    try:
+        request_json = await request.json()
+        response = await jsonrpcserver.dispatch(request_json)
+        return response
+    except Exception as e:
+        # Return a JSON-RPC error response
+        error_response = {
+            "jsonrpc": "2.0",
+            "error": {
+                "code": -32603,
+                "message": f"Internal error: {str(e)}"
+            },
+            "id": None
+        }
+        return error_response
+
 
 # Initialize with example agent
 @app.on_event("startup")
@@ -191,7 +332,7 @@ def send_message(chat_id: str, message_request: SendMessageRequest):
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
-    # Generate response from agent
+    # Generate response from agent - for external agents with endpoints, make HTTP request
     response_content = generate_agent_response(message_request.content, agent)
     
     # Add assistant message
@@ -334,8 +475,66 @@ def fetch_agent_well_known(agent_url: str):
 
 def generate_agent_response(user_message: str, agent: dict) -> str:
     """Generate response from an agent based on user message"""
+    import requests, uuid, random
+
+    # If the agent has an endpoint, make an HTTP request to it
+    if agent.get("endpoint"):
+        try:
+            agent_endpoint = agent["endpoint"]
+
+            # ✅ Build the proper JSON-RPC request
+            agent_request_data = {
+                "jsonrpc": "2.0",
+                "method": "message/send",  # must be literal 'message/send'
+                "params": {
+                    "message": {
+                        # Required by schema
+                        "messageId": str(uuid.uuid4()),  # unique ID for each message
+                        "role": "user",
+                        # 'parts' must be a list of objects (not a single string)
+                        "parts": [
+                            {"text": user_message, "type": "text"}
+                        ]
+                    }
+                },
+                "id": 1
+            }
+
+            # Make the API call to the external agent
+            response = requests.post(
+                agent_endpoint,
+                json=agent_request_data,
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                response_data = response.json()
+
+                # Try different common response field names based on typical agent APIs
+                if isinstance(response_data, str):
+                    return response_data
+                elif "response" in response_data:
+                    return response_data["response"]
+                elif "output" in response_data:
+                    return response_data["output"]
+                elif "content" in response_data:
+                    return response_data["content"]
+                elif "message" in response_data:
+                    return response_data["message"]
+                elif isinstance(response_data, dict) and len(response_data) == 1:
+                    return list(response_data.values())[0]
+                else:
+                    return str(response_data)
+            else:
+                return f"Error contacting agent: {response.status_code} - {response.text}"
+
+        except requests.exceptions.RequestException as e:
+            return f"Connection error with agent: {str(e)}"
+        except Exception as e:
+            return f"Error processing agent response: {str(e)}"
+
+    # Fallback to built-in agents if no endpoint is provided
     if agent["id"] == "cyrano_agent":
-        # Cyrano de Bergerac agent responds in an eloquent, poetic way
         response_templates = [
             f"Ah, dear interlocutor, what you speak of '{user_message}' doth stir within me thoughts most profound...",
             f"'{user_message}', you say? How wondrous that fate hath brought us to discourse upon such matters...",
@@ -343,8 +542,6 @@ def generate_agent_response(user_message: str, agent: dict) -> str:
             f"Verily, your inquiry regarding '{user_message}' doth remind me of the beauty that lies in thoughtful contemplation...",
             f"In the symphony of discourse, your words '{user_message}' play a melody both sweet and intriguing..."
         ]
-        import random
         return random.choice(response_templates)
     else:
-        # Default response for other agents
         return f"I'm {agent['name']}. You said: '{user_message}'. How may I assist you?"
