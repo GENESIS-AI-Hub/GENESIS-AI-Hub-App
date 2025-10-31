@@ -4,27 +4,27 @@ graph TD
     %% EXTERNAL AUTH SYSTEMS
     %% ==============================
     subgraph External
-        A[External SSO Provider (Microsoft SSO / Duo)]
+        A["External SSO Provider (Microsoft SSO or Duo)"]
     end
 
     %% ==============================
     %% GCP HOSTING ARCHITECTURE
     %% ==============================
-    subgraph GCP_Hosting["Google Cloud Platform (GCP) Hosting"]
+    subgraph GCP_Hosting["Google Cloud Platform - GCP Hosting"]
         direction LR
 
         subgraph FrontEnd["Front-End / Web Service"]
-            H[Web-Based Chat UI (React.js on Cloud Run / App Engine)]
+            H["Web-Based Chat UI (React.js on Cloud Run or App Engine)"]
         end
 
         subgraph BackEnd["Back-End Routing Service"]
-            M[Core Back-End Routing Service (Node.js / Python on Cloud Run)]
+            M["Core Back-End Routing Service (Node.js or Python on Cloud Run)"]
         end
 
-        subgraph Persistence["Persistence & Registry"]
-            K[Agent Services Registry (PostgreSQL / Firebase)]
-            F[Chat History & User Data (ChatDB, MessagesDB)]
-            O[File Storage Bucket (Cloud Storage)]
+        subgraph Persistence["Persistence and Registry"]
+            K["Agent Services Registry (PostgreSQL or Firebase)"]
+            F["Chat History and User Data (ChatDB, MessagesDB)"]
+            O["File Storage Bucket (Cloud Storage)"]
         end
     end
 
@@ -32,16 +32,16 @@ graph TD
     %% DECENTRALIZED AGENT SYSTEMS
     %% ==============================
     subgraph DecentralizedAgents["Decentralized Agent Systems"]
-        J[OSU-Developed Agent 1: FAIE / GOA]
-        L[External Agent N: Other OSU Services]
+        J["OSU-Developed Agent 1 - FAIE / GOA"]
+        L["External Agent N - Other OSU Services"]
     end
 
     %% ==============================
     %% FLOW: AUTHENTICATION
     %% ==============================
-    A -->|1. SSO / Duo Auth| H
+    A -->|1. SSO or Duo Auth| H
     H -->|2. Token Exchange / Session Init| M
-    M -->|3. Store / Retrieve User ONID & Session| F
+    M -->|3. Store or Retrieve User ONID & Session| F
 
     %% ==============================
     %% FLOW: USER INTERACTION
@@ -54,10 +54,10 @@ graph TD
     %% ==============================
     %% FLOW: AGENT ROUTING
     %% ==============================
-    M -->|6. Route Context / Query| J
-    M -->|6b. Route Context / Query| L
-    J -->|7. Agent Response (JSON / Text)| M
-    L -->|7b. Agent Response (JSON / Text)| M
+    M -->|6. Route Context or Query| J
+    M -->|6b. Route Context or Query| L
+    J -->|7. Agent Response (JSON or Text)| M
+    L -->|7b. Agent Response (JSON or Text)| M
     M -->|8. Response to User| H
 
     %% ==============================
