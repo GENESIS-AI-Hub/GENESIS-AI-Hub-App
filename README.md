@@ -1,4 +1,5 @@
 # GENESIS-AI-Hub
+
 OSU GENESIS AI Hub for CS Capstone. Team # 043
 
 A model for collaboration between Oregon State AI agents, utilizing context to provide users with better responses to queries.
@@ -29,15 +30,15 @@ GH: jsweet8258
 
 ## Project Structure
 
-*   `front/`: Contains the React frontend application.
-*   `back/`: Contains the FastAPI backend application.
-*   `deploy.sh`: A script to deploy both applications to Google Cloud Run.
+- `front/`: Contains the React frontend application.
+- `back/`: Contains the FastAPI backend application.
+- `deploy.sh`: A script to deploy both applications to Google Cloud Run.
 
 ## Prerequisites
 
-*   [Docker](https://www.docker.com/)
-*   [Google Cloud SDK](https://cloud.google.com/sdk/docs/install)
-*   [Node.js and npm](https://nodejs.org/)
+- [Docker](https://www.docker.com/)
+- [Google Cloud SDK](https://cloud.google.com/sdk/docs/install)
+- [Node.js and npm](https://nodejs.org/)
 
 ## Local Development
 
@@ -57,6 +58,8 @@ GH: jsweet8258
     ```
     The backend will be available at `http://localhost:8000`.
 
+- Note: To lint, use `ruff check`
+
 ### Frontend
 
 1.  Navigate to the `front` directory:
@@ -73,9 +76,12 @@ GH: jsweet8258
     ```
     The frontend will be available at `http://localhost:3000`.
 
+- Note: To lint, use `npm run lint`
+
 ## Deployment
 
 1.  **Authenticate with GCP:**
+
     ```bash
     gcloud auth login
     gcloud auth configure-docker
@@ -85,10 +91,11 @@ GH: jsweet8258
 
     Open `deploy.sh` and replace the following placeholder values with your GCP project ID and desired region:
 
-    *   `your-gcp-project-id`
-    *   `your-gcp-region`
+    - `your-gcp-project-id`
+    - `your-gcp-region`
 
 3.  **Run the deployment script:**
+
     ```bash
     ./deploy.sh
     ```
