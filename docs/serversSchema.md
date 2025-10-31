@@ -32,7 +32,7 @@ graph TD
     %% DECENTRALIZED AGENT SYSTEMS
     %% ==============================
     subgraph DecentralizedAgents["Decentralized Agent Systems"]
-        J["OSU-Developed Agent 1 - FAIE / GOA"]
+        J["OSU-Developed Agent 1 - FAIE or GOA"]
         L["External Agent N - Other OSU Services"]
     end
 
@@ -41,13 +41,13 @@ graph TD
     %% ==============================
     A -->|1. SSO or Duo Auth| H
     H -->|2. Token Exchange / Session Init| M
-    M -->|3. Store or Retrieve User ONID & Session| F
+    M -->|3. Store or Retrieve User ONID and Session| F
 
     %% ==============================
     %% FLOW: USER INTERACTION
     %% ==============================
-    H -->|4. User Chat Query + Attachments| M
-    H -->|4a. File Upload (Client → Bucket)| O
+    H -->|4. User Chat Query and Attachments| M
+    H -->|4a. File Upload (Client to Bucket)| O
     O -->|4b. Fetch File (if attached)| M
     M -->|5. Lookup Agent Endpoint via Registry| K
 
