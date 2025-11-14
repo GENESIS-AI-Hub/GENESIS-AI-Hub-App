@@ -6,4 +6,4 @@ app = agent_engines.AdkApp(
     enable_tracing=True,
 )
 
-# adk deploy agent_engine --project=cyrano-de-bergerac-468215 --region=us-west1 --staging_bucket=gs://cyrano-staging-bucket --display_name=cyrando-de-bergerac-agent-orchestrator orchestrator
+adk deploy agent_engine --project=cyrano-de-bergerac-468215 --region=us-west1 --staging_bucket=gs://cyrano-staging-bucket --display_name=cyrando-de-bergerac-agent-orchestrator orchestrator

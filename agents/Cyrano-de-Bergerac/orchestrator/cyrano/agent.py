@@ -1,17 +1,24 @@
-
 from google.adk.agents import Agent
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# --- FIX ---
+# Get the directory of this file (cyrano/agent.py)
+current_dir = os.path.dirname(__file__)
+# Go one level up to the 'orchestrator' folder
+parent_dir = os.path.join(current_dir, '..')
+# Specify the full path to the .env file
+env_path = os.path.join(parent_dir, '.env')
+
+# Load the .env file from that specific path
+load_dotenv(dotenv_path=env_path)
+# --- END FIX ---
 
 cyrano_agent = Agent(
     name="cyrano",
-    # model=os.environ.get("CYRANO_MODEL"),
-    model="gemini-1.5-pro-latest",
-    description="An agent that crafts a reply to a message in a specific tone.",
+    model=os.environ.get("CYRANO_MODEL"),
+    description="An agent that rewrites text...",
     instruction=(
-        "You will receive a JSON string containing 'original_payload' and 'tone'. "
-        "Craft an eloquent reply to the 'original_payload' in the given 'tone'."
+        "Rewrite the 'original_payload' to match the given 'tone'..."
     ),
 )

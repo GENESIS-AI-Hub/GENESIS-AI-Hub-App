@@ -2,15 +2,23 @@ from google.adk.agents import Agent
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# --- FIX ---
+# Get the directory of this file (chris/agent.py)
+current_dir = os.path.dirname(__file__)
+# Go one level up to the 'orchestrator' folder
+parent_dir = os.path.join(current_dir, '..')
+# Specify the full path to the .env file
+env_path = os.path.join(parent_dir, '.env')
+
+# Load the .env file from that specific path
+load_dotenv(dotenv_path=env_path)
+# --- END FIX ---
 
 chris_agent = Agent(
     name="chris",
-    # model=os.environ.get("CHRIS_MODEL"),
-    model="gemini-1.5-pro-latest",
-    description="An agent that classifies the tone of a text and prepares the data for the Cyrano agent.",
+    model=os.environ.get("CHRIS_MODEL"),
+    description="An agent that classifies the tone of a text...",
     instruction=(
-        "Given a text, classify its tone (e.g., formal, informal, angry, happy). "
-        "Then, output a JSON string with two keys: 'original_payload' (the original text) and 'tone' (the classified tone)."
+        "Given a text, classify its tone..."
     ),
 )
