@@ -88,12 +88,9 @@ bash Miniforge3-$(uname)-$(uname -m).sh
 # 4. Type 'yes' when asked "Do you wish to update your shell profile to automatically initialize conda?"
 ```
 
-### On Windows (WSL2):
+### On Windows:
 
-```bash
-curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
-bash Miniforge3-Linux-x86_64.sh
-```
+Follow the official Windows install guide [here](https://github.com/conda-forge/miniforge)
 
 ### Verify Installation:
 
