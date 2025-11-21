@@ -8,5 +8,6 @@ _test
 Pipfile
 !/data
 /data/*
+!/data/.gitkeep
 /open_webui/data/*
 .webui_secret_key
