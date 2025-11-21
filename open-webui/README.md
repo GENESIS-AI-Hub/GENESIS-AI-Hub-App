@@ -310,34 +310,17 @@ In the terminal running the backend, press `Ctrl+C`
 
 This Open WebUI fork now includes full **Agent-to-Agent (A2A) Protocol** support, allowing it to discover, register, and communicate with external AI agents using JSON-RPC 2.0.
 
-### 📚 A2A Documentation
+### A2A Documentation
 
-**Quick Navigation**: See **[A2A_INDEX.md](./A2A_INDEX.md)** for a complete documentation index.
-
-**Essential Documents**:
-- **[A2A Quick Reference](./A2A_QUICK_REFERENCE.md)** - Single-page overview (start here!)
 - **[A2A Quick Start Guide](./A2A_QUICKSTART.md)** - Step-by-step user guide with examples
 - **[A2A Implementation Summary](./A2A_IMPLEMENTATION_SUMMARY.md)** - Complete technical documentation for developers
 - **[A2A Code Changes](./A2A_CODE_CHANGES.md)** - Detailed list of all code modifications
-- **[A2A Changelog](./A2A_CHANGELOG.md)** - Version history and improvements
-
-### ✨ Recent Improvements (November 2025)
-
-**Major Bug Fixes:**
-- ✅ **Fixed**: Agents now work without requiring OpenAI/Ollama models
-- ✅ **Fixed**: Agents immediately available after registration (no more "Model not found")
-- ✅ **Added**: Comprehensive logging for easy troubleshooting
-- ✅ **Improved**: Test script intelligently selects correct agent
-
-See [A2A_CHANGELOG.md](./A2A_CHANGELOG.md) for detailed information about all fixes and improvements.
 
 ### What is A2A Protocol?
 
 The A2A protocol enables AI agents to:
 - **Discover** each other through `.well-known/agent.json` endpoints
 - **Communicate** using standardized JSON-RPC 2.0 messaging
-- **Register** with hub services for coordination
-- **Exchange** structured messages with defined schemas
 
 ### Architecture Overview
 
@@ -360,13 +343,12 @@ The A2A protocol enables AI agents to:
 ```
 
 ### A2A Features Implemented
-
-✅ **Agent Discovery**: `.well-known/agent.json` endpoint
-✅ **Agent Registry**: Full CRUD operations for agents
-✅ **JSON-RPC 2.0**: Standard messaging protocol
-✅ **REST API**: `/api/v1/agents` endpoints for management
-✅ **Database Persistence**: Agents stored in SQLite
-✅ **Agent Communication**: Send messages to registered agents
+- **Agent Discovery**: `.well-known/agent.json` endpoint 
+- **Agent Registry**: Full CRUD operations for agents
+- **JSON-RPC 2.0**: Standard messaging protocol
+- **REST API**: `/api/v1/agents` endpoints for management
+- **Database Persistence**: Agents stored in SQLite
+- **Agent Communication**: Send messages to registered agents
 
 ---
 
@@ -378,7 +360,7 @@ To test the A2A protocol integration, you need to run both Open WebUI and the GE
 
 ```bash
 # Navigate to open-webui backend
-cd /Users/minsoup/GENESIS-AI-Hub-App/open-webui/backend
+cd /GENESIS-AI-Hub-App/open-webui/backend
 
 # Activate conda environment
 conda activate open-webui
@@ -399,7 +381,7 @@ sh dev.sh
 
 ```bash
 # Navigate to the main backend directory
-cd /Users/minsoup/GENESIS-AI-Hub-App/back
+cd /GENESIS-AI-Hub-App/back
 
 # Install dependencies (first time only)
 pip install -r requirements.txt
@@ -424,11 +406,11 @@ Once you've set up your A2A agent connections (see below), you can use them dire
 
 #### Automated Testing
 
-We provide a comprehensive test script to verify your A2A setup:
+A comprehensive test script is provided to verify your A2A setup:
 
 ```bash
 # Navigate to the project root
-cd /Users/minsoup/GENESIS-AI-Hub-App/open-webui
+cd /GENESIS-AI-Hub-App/open-webui
 
 # Activate your conda environment
 conda activate open-webui
@@ -462,12 +444,12 @@ Test Suite Complete
 ```
 
 The test script will:
-1. ✓ Verify Open WebUI is running
-2. ✓ Test agent discovery (`.well-known/agent.json`)
-3. ✓ Check A2A configuration API access
-4. ✓ Register the agent with Open WebUI
-5. ✓ Verify agent appears in models list
-6. ✓ Test chat completion with the agent
+1. Verify Open WebUI is running
+2. Test agent discovery (`.well-known/agent.json`)
+3. Check A2A configuration API access
+4. Register the agent with Open WebUI
+5. Verify agent appears in models list
+6. Test chat completion with the agent
 
 **To get your API key:**
 1. Open http://localhost:8080 in your browser
@@ -514,28 +496,6 @@ The test script will:
 3. **Chat with Your Agent:**
    - Type your message and press Enter
    - The agent will process your message using its custom logic
-   - Responses will appear just like with any LLM model
-   - Both streaming and non-streaming responses are supported!
-
-#### Agent Connection Examples
-
-**Example 1: Google ADK Agent (Cyrano de Bergerac)**
-```
-URL: http://localhost:8001
-Name: Cyrano de Bergerac
-```
-
-**Example 2: Custom Python Agent**
-```
-URL: http://localhost:8000
-Name: My Custom Agent
-```
-
-**Example 3: Remote Agent**
-```
-URL: https://agent.example.com
-Name: Production Agent
-```
 
 #### Troubleshooting Agent Connections
 
@@ -550,230 +510,12 @@ Name: Production Agent
 - Verify the agent connection has a green checkmark (verified)
 - Refresh the page to reload the model list
 - Check that A2A Agents are enabled (toggle is ON)
-- **New**: Agents will now appear even if you have no OpenAI/Ollama models configured
 - Check backend logs for `[MODELS]` entries confirming agent was added
 
 **"Agent returns error in chat"**
 - Check the agent server logs for error details
 - Verify the agent correctly implements JSON-RPC 2.0 protocol
 - Ensure the agent returns responses in the expected A2A format
-- Test the agent directly using curl (see API testing section below)
-
----
-
-### Testing A2A Protocol (API Level)
-
-For developers who want to test A2A agents programmatically or debug connection issues:
-
-#### Step 1: Verify A2A Discovery Endpoints
-
-Test that both services expose their A2A discovery information:
-
-```bash
-# Test Open WebUI A2A discovery
-curl http://localhost:8080/.well-known/agent.json | jq
-
-# Expected output: Agent information with capabilities, skills, etc.
-```
-
-```bash
-# Test GENESIS AI Hub A2A discovery
-curl http://localhost:8000/.well-known/agent.json | jq
-
-# Expected output: Hub agent information
-```
-
-#### Step 2: Register GENESIS AI Hub as an Agent
-
-Register the GENESIS AI Hub backend with Open WebUI using the config API:
-
-```bash
-# Get your API key from Settings → Account → API Key in Open WebUI
-export OPENWEBUI_API_KEY="your-api-key-here"
-
-# Register agent via config API (recommended method)
-curl -X POST http://localhost:8080/api/v1/configs/a2a_agents \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $OPENWEBUI_API_KEY" \
-  -d '{
-    "ENABLE_A2A_AGENTS": true,
-    "A2A_AGENT_CONNECTIONS": [
-      {
-        "url": "http://localhost:8000",
-        "name": "GENESIS AI Hub",
-        "config": {}
-      }
-    ]
-  }' | jq
-
-# Expected output: Configuration with ENABLE_A2A_AGENTS: true
-```
-
-**Alternative: Register via Agent API**
-
-```bash
-# Register by URL (automatic discovery)
-curl -X POST http://localhost:8080/api/v1/agents/register-by-url \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $OPENWEBUI_API_KEY" \
-  -d '{
-    "agent_url": "http://localhost:8000"
-  }' | jq
-
-# Expected output: Registered agent details with ID
-```
-
-**Note**: The config API (`/api/v1/configs/a2a_agents`) is the recommended method as it:
-- Automatically refreshes the models cache
-- Makes agents immediately available in the chat UI
-- Syncs config to the database
-
-#### Step 3: List Registered Agents
-
-```bash
-# List all active agents
-curl http://localhost:8080/api/v1/agents \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" | jq
-
-# You should see the registered GENESIS AI Hub agent and any other registered agents
-```
-
-**Troubleshooting**: If you don't see your agent:
-- Check that the agent was registered successfully (step 2)
-- Verify the backend logs show `[MODELS] Added A2A agent model: ...`
-- Agents are cached in memory; if using multiple workers, the cache refreshes automatically when you try to use the agent
-
-#### Step 4: Send a Message to a Registered Agent
-
-```bash
-# Replace {agent_id} with the ID from step 2
-curl -X POST http://localhost:8080/api/v1/agents/{agent_id}/message \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -d '{
-    "message": "Hello from Open WebUI! Testing A2A communication."
-  }' | jq
-
-# Expected output: Response from the agent
-```
-
-#### Step 5: Test JSON-RPC Endpoint
-
-Test the JSON-RPC endpoint directly:
-
-```bash
-# Send a JSON-RPC message
-curl -X POST http://localhost:8080/jsonrpc \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "message/send",
-    "params": {
-      "message": {
-        "messageId": "test-123",
-        "role": "user",
-        "parts": [
-          {
-            "text": "Hello A2A!",
-            "type": "text"
-          }
-        ]
-      }
-    },
-    "id": 1
-  }' | jq
-
-# Expected output: JSON-RPC response with result
-```
-
----
-
-### A2A API Endpoints Reference
-
-#### Agent Management Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/agents` | List all active agents |
-| GET | `/api/v1/agents/{agent_id}` | Get specific agent details |
-| POST | `/api/v1/agents/register` | Manually register an agent |
-| POST | `/api/v1/agents/register-by-url` | Register agent from `.well-known/agent.json` |
-| GET | `/api/v1/agents/fetch-well-known?agent_url=...` | Preview agent info without registering |
-| PATCH | `/api/v1/agents/{agent_id}` | Update agent details |
-| DELETE | `/api/v1/agents/{agent_id}` | Delete/unregister an agent |
-| POST | `/api/v1/agents/{agent_id}/message` | Send message to agent via A2A |
-
-#### A2A Protocol Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/.well-known/agent.json` | Agent discovery (returns Open WebUI capabilities) |
-| POST | `/jsonrpc` | JSON-RPC 2.0 message endpoint |
-
----
-
-### Example: Complete A2A Workflow
-
-Here's a complete example of the A2A workflow:
-
-```bash
-# 1. Verify both services are running
-curl http://localhost:8080/health
-curl http://localhost:8000/
-
-# 2. Discover the external agent
-curl http://localhost:8000/.well-known/agent.json | jq
-
-# 3. Register the agent with Open WebUI
-AGENT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/agents/register-by-url \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -d '{"agent_url": "http://localhost:8000"}')
-
-echo $AGENT_RESPONSE | jq
-
-# 4. Extract the agent ID
-AGENT_ID=$(echo $AGENT_RESPONSE | jq -r '.id')
-echo "Registered Agent ID: $AGENT_ID"
-
-# 5. Send a test message to the agent
-curl -X POST "http://localhost:8080/api/v1/agents/$AGENT_ID/message" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -d '{
-    "message": "Hello! Can you help me with a task?"
-  }' | jq
-
-# 6. List all registered agents
-curl http://localhost:8080/api/v1/agents \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" | jq
-```
-
----
-
-### Integration with GENESIS AI Hub Backend
-
-The GENESIS AI Hub backend (`/back/main.py`) provides:
-
-- **Agent Registry**: Stores and manages available agents
-- **Chat Management**: Maintains conversation history
-- **Message Routing**: Routes messages to appropriate agents
-- **JSON-RPC Server**: Implements A2A protocol server
-
-#### GENESIS AI Hub Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/` | Health check |
-| GET | `/.well-known/agent.json` | A2A discovery endpoint |
-| POST | `/jsonrpc` | JSON-RPC 2.0 message handler |
-| GET | `/agents` | List registered agents in hub |
-| POST | `/agents/register` | Register a new agent |
-| POST | `/agents/register-by-url` | Register agent by URL |
-| GET | `/chats` | List all chat threads |
-| POST | `/chats` | Create a new chat thread |
-| GET | `/chats/{chat_id}/messages` | Get messages in a chat |
-| POST | `/chats/{chat_id}/messages` | Send message in a chat |
 
 ---
 
@@ -807,34 +549,6 @@ The migration runs automatically when you start Open WebUI for the first time af
 ---
 
 ### A2A Implementation Details
-
-#### Recent Improvements (November 2025)
-
-**Critical Bug Fixes:**
-
-1. **Fixed: Agents not appearing when no base models configured**
-   - **Issue**: If you had no OpenAI/Ollama models configured, A2A agents wouldn't appear in the models list
-   - **Root Cause**: Early return in `get_all_models()` prevented A2A agent processing
-   - **Fix**: Removed early return, agents now load regardless of base model configuration
-   - **File**: `backend/open_webui/utils/models.py`
-
-2. **Fixed: "Model not found" error after agent registration**
-   - **Issue**: Newly registered agents weren't immediately available for chat
-   - **Root Cause**: In-memory models cache wasn't refreshed after registration
-   - **Fix**: Dual refresh strategy (proactive after config save + reactive when model missing)
-   - **Files**: `backend/open_webui/routers/configs.py`, `backend/open_webui/main.py`
-
-3. **Fixed: Test script selecting wrong agent**
-   - **Issue**: Integration test tried to chat with first agent instead of specified agent
-   - **Root Cause**: Simple array indexing without matching URL/name
-   - **Fix**: Smart agent selection matching endpoint URL or name
-   - **File**: `test_a2a_integration.py`
-
-**Performance Enhancements:**
-
-- Added comprehensive logging throughout the A2A flow for easier debugging
-- Models cache now includes detailed agent metadata for troubleshooting
-- Config API automatically triggers cache refresh for immediate availability
 
 **How It Works:**
 
@@ -878,7 +592,7 @@ To view registered agents directly in the database:
 
 ```bash
 # Navigate to the backend data directory
-cd /Users/minsoup/GENESIS-AI-Hub-App/open-webui/backend/open_webui/data
+cd /GENESIS-AI-Hub-App/open-webui/backend/open_webui/data
 
 # Open the database
 sqlite3 webui.db
@@ -908,111 +622,6 @@ SELECT name, endpoint, updated_at FROM agent WHERE is_active = 0;
 -- Delete a specific agent
 DELETE FROM agent WHERE id = 'agent-uuid-here';
 ```
-
----
-
-### Development Tips
-
-#### Viewing Logs
-
-**Open WebUI logs:**
-```bash
-# The logs appear in the terminal where you ran `sh dev.sh`
-# Look for A2A-related messages during agent registration
-
-# Example log entries:
-# [MODELS] get_all_base_models returned 0 models
-# [MODELS] A2A agents enabled: True
-# [MODELS] Found 2 agents in database
-# [MODELS] Processing agent: Cyrano (id: xxx, endpoint: http://localhost:8001)
-# [MODELS] Added A2A agent model: Cyrano (agent:xxx)
-# [MODELS] Set request.app.state.MODELS with 3 models
-# [MODELS] Model IDs in cache: ['arena-model', 'agent:xxx', 'agent:yyy']
-# [CHAT] Requested model_id: agent:xxx
-# [CHAT] Available models in cache: ['arena-model', 'agent:xxx', 'agent:yyy']
-# [CHAT] Model is A2A agent, refreshing models cache...
-# [CONFIG] Refreshing models cache after A2A agent registration...
-# [CONFIG] Models cache refreshed. Cache now has 3 models
-```
-
-**GENESIS AI Hub logs:**
-```bash
-# Logs appear in the terminal where you ran `uvicorn`
-# Shows incoming JSON-RPC requests and responses
-```
-
-**Enable Debug Logging:**
-
-To see even more detailed logs, set the log level in your backend environment:
-
-```bash
-# In backend/.env or export before starting
-export GLOBAL_LOG_LEVEL=DEBUG
-
-# Start backend
-sh dev.sh
-```
-
-#### Debugging Agent Communication
-
-1. **Check agent is registered:**
-   ```bash
-   curl http://localhost:8080/api/v1/agents \
-     -H "Authorization: Bearer YOUR_TOKEN" | jq
-   ```
-
-2. **Verify endpoint is accessible:**
-   ```bash
-   curl http://localhost:8000/.well-known/agent.json
-   ```
-
-3. **Test direct JSON-RPC call:**
-   ```bash
-   curl -X POST http://localhost:8000/jsonrpc \
-     -H "Content-Type: application/json" \
-     -d '{
-       "jsonrpc": "2.0",
-       "method": "message/send",
-       "params": {
-         "message": {
-           "messageId": "test-123",
-           "role": "user",
-           "parts": [{"text": "test", "type": "text"}]
-         }
-       },
-       "id": 1
-     }' | jq
-   ```
-
-#### Database Inspection
-
-View registered agents in the database:
-
-```bash
-# Navigate to the backend data directory
-cd /Users/minsoup/GENESIS-AI-Hub-App/open-webui/backend/open_webui/data
-
-# Open the database with sqlite3
-sqlite3 webui.db
-
-# Query agents
-sqlite> SELECT id, name, endpoint, is_active FROM agent;
-sqlite> .quit
-```
-
----
-
-### Next Steps
-
-Now that you have A2A protocol working, you can:
-
-1. **Build Custom Agents**: Create your own A2A-compatible agents
-2. **Connect Multiple Agents**: Register multiple agents and route messages between them
-3. **Extend the Protocol**: Add custom capabilities and skills
-4. **Integrate with Frontend**: Build UI components to manage agents visually
-5. **Deploy to Production**: Use Docker and cloud services for deployment
-
-For more information about the A2A protocol and best practices, refer to the [GENESIS AI Hub documentation](../README.md).
 
 ---
 
@@ -1156,6 +765,8 @@ grep -r "open-webui" . --exclude-dir={node_modules,build,backend/static}
 This repository is a customized fork of the original [Open WebUI](https://github.com/open-webui/open-webui) project © 2023–2025 Timothy Jaeryang Baek, originally released under the **BSD 3-Clause License**.
 
 This fork includes modifications and rebranding by © 2025 Oregon State University, and all new contributions are licensed under the **MIT License**.
+
+For more deatiled information about the repository, refer to the [GENESIS AI Hub documentation](../README.md).
 
 ---
 
