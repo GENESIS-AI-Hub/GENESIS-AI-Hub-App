@@ -63,4 +63,8 @@ root_agent = oregon_state_agent
 # Create A2A-compatible application
 # Use port 8080 for Cloud Run compatibility
 # The A2A framework will use APP_URL environment variable if set by Cloud Run
-a2a_app = to_a2a(root_agent, port=8080)
+app_url = os.environ.get("APP_URL")
+if app_url:
+    a2a_app = to_a2a(root_agent, port=8080, host=app_url)
+else:
+    a2a_app = to_a2a(root_agent, port=8080)

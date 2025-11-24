@@ -150,7 +150,7 @@ Examples:
         f"--region={region}",
         f"--project={project}",
         f"--memory={args.memory}",
-        f"--set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT={project},GOOGLE_CLOUD_LOCATION={region},APP_URL={app_url}"
+        f"--set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT={project},GOOGLE_CLOUD_LOCATION={region},APP_URL={app_url},HOST_OVERRIDE={app_url}"
     ]
     
     # Add authentication flag
