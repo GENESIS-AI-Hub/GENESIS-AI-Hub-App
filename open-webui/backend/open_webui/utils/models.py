@@ -169,6 +169,7 @@ async def get_all_models(request, user: UserModel = None):
                     "preset": True,
                     **({"pipe": pipe} if pipe is not None else {}),
                     "action_ids": action_ids,
+                    "tags": [{"name": "model"}], # Add MODEL tag
                 }
             )
 
@@ -252,8 +253,10 @@ async def get_all_models(request, user: UserModel = None):
                         "meta": {
                             "description": agent.description,
                             "capabilities": agent.capabilities,
+                            "profile_image_url": agent.profile_image_url,
                         }
                     },
+                    "tags": [{"name": "agent"}],  # Add AGENT tag
                     "actions": []  # Agents don't have actions like regular models
                 }
                 models.append(agent_model)

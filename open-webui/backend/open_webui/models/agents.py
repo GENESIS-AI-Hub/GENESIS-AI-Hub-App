@@ -29,6 +29,7 @@ class Agent(Base):
     # Schema fields for validation
     input_schema = Column(JSONField, nullable=True)
     output_schema = Column(JSONField, nullable=True)
+    profile_image_url = Column(Text, nullable=True)
 
     # Metadata
     is_active = Column(Boolean, default=True)
@@ -52,13 +53,13 @@ class AgentModel(BaseModel):
     default_output_modes: Optional[List[str]] = None
     input_schema: Optional[dict] = None
     output_schema: Optional[dict] = None
+    profile_image_url: Optional[str] = None
     is_active: bool = True
     created_at: int
     updated_at: int
     user_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
-
 
 ####################
 # Forms
@@ -86,6 +87,7 @@ class RegisterAgentForm(BaseModel):
 
 class RegisterAgentByUrlForm(BaseModel):
     agent_url: str
+    profile_image_url: Optional[str] = None
 
 
 class AgentUpdateForm(BaseModel):
@@ -115,6 +117,7 @@ class AgentsTable:
         default_output_modes: Optional[List[str]] = None,
         input_schema: Optional[dict] = None,
         output_schema: Optional[dict] = None,
+        profile_image_url: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> Optional[AgentModel]:
         with get_db() as db:
@@ -132,6 +135,7 @@ class AgentsTable:
                     "default_output_modes": default_output_modes,
                     "input_schema": input_schema,
                     "output_schema": output_schema,
+                    "profile_image_url": profile_image_url,
                     "is_active": True,
                     "created_at": int(time.time()),
                     "updated_at": int(time.time()),
@@ -149,6 +153,14 @@ class AgentsTable:
         try:
             with get_db() as db:
                 agent = db.query(Agent).filter_by(id=id).first()
+                return AgentModel.model_validate(agent) if agent else None
+        except Exception:
+            return None
+
+    def get_agent_by_url(self, url: str) -> Optional[AgentModel]:
+        try:
+            with get_db() as db:
+                agent = db.query(Agent).filter_by(url=url).first()
                 return AgentModel.model_validate(agent) if agent else None
         except Exception:
             return None

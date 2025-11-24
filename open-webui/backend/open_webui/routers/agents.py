@@ -95,7 +95,6 @@ async def get_agent_by_id(agent_id: str, user=Depends(get_verified_user)):
 # RegisterAgent
 ############################
 
-
 @router.post("/register", response_model=AgentModel)
 async def register_agent(
     form_data: RegisterAgentForm,
@@ -163,33 +162,6 @@ async def register_agent_by_url(
         capabilities = agent_data.get("capabilities", {})
         skills = agent_data.get("skills", [])
         default_input_modes = agent_data.get("defaultInputModes", ["text"])
-        default_output_modes = agent_data.get("defaultOutputModes", ["text"])
-
-        # Generate new ID for the agent
-        agent_id = str(uuid.uuid4())
-
-        # Create agent with fetched data
-        agent = Agents.insert_new_agent(
-            id=agent_id,
-            name=name,
-            description=description,
-            endpoint=url,
-            url=url,
-            version=version,
-            capabilities=capabilities,
-            skills=skills,
-            default_input_modes=default_input_modes,
-            default_output_modes=default_output_modes,
-            user_id=user.id,
-        )
-
-        if agent:
-            return agent
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT(),
-        )
-
     except requests.exceptions.RequestException as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

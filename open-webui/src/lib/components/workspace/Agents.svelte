@@ -104,14 +104,15 @@
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                agent_url: agent.url
+                agent_url: agent.url,
+                profile_image_url: agent.image_url
             })
         });
         
         if (res.ok) {
             toast.success('Agent installed successfully');
             // Refresh models to show the new agent
-             await getModels(localStorage.token);
+            await models.set(await getModels(localStorage.token));
         } else {
             const err = await res.json();
             toast.error(err.detail || 'Failed to install agent');
