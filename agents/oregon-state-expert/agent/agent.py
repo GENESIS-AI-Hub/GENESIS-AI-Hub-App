@@ -65,6 +65,13 @@ root_agent = oregon_state_agent
 # The A2A framework will use APP_URL environment variable if set by Cloud Run
 app_url = os.environ.get("APP_URL")
 if app_url:
-    a2a_app = to_a2a(root_agent, port=8080, host=app_url)
+    from urllib.parse import urlparse
+    parsed_url = urlparse(app_url)
+    a2a_app = to_a2a(
+        root_agent,
+        host=parsed_url.hostname,
+        port=parsed_url.port or (443 if parsed_url.scheme == "https" else 80),
+        protocol=parsed_url.scheme or "http"
+    )
 else:
     a2a_app = to_a2a(root_agent, port=8080)
