@@ -197,7 +197,7 @@ pip install -r requirements.txt -U
 # This will take several minutes...
 ```
 
-### Step 2: Build the Frontend
+### Step 2: Build and Copy Frontend
 
 ```bash
 # Navigate back to the project root
@@ -215,23 +215,14 @@ npm install
 # If you encounter errors, try:
 npm install --force
 
-# Build the frontend (this compiles it into static files)
-npm run build
+# Build the frontend and copy to backend
+npm run build:copy
 ```
 
-This creates an optimized production build in the `build/` directory.
-
-### Step 3: Copy Built Frontend to Backend
-
-```bash
-# Copy the built frontend to the backend's static directory
-cp -r build backend/static
-
-# Verify the files were copied
-ls -la backend/static/
+This creates an optimized production build and copies it to the `backend/static` directory.
 ```
 
-### Step 4: Start the Backend Server
+### Step 3: Start the Backend Server
 
 ```bash
 # Navigate to the backend directory
@@ -253,7 +244,7 @@ INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 ```
 
-### Step 5: Access Open WebUI
+### Step 4: Access Open WebUI
 
 Open your web browser and navigate to:
 
@@ -291,11 +282,8 @@ cd ~/open-webui
 # Ensure you're using Node 22
 nvm use 22
 
-# Rebuild the frontend
-npm run build
-
-# Copy the new build to backend
-cp -r build backend/static
+# Rebuild the frontend and copy to backend
+npm run build:copy
 
 # The backend will automatically detect changes if dev.sh is running
 ```
