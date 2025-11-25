@@ -338,6 +338,14 @@ The A2A protocol enables AI agents to:
 - **Database Persistence**: Agents stored in SQLite
 - **Agent Communication**: Send messages to registered agents
 
+### A2A Agent Registry (New!)
+The **Agent Registry** allows users to discover, share, and install A2A agents from a decentralized list.
+- **Workspace Integration**: Manage agents directly from the "Workspace" -> "Agents" tab.
+- **Decentralized**: Submit any publicly hosted A2A agent (via URL).
+- **Access Control**: Scope agents to specific users or groups (Public/Private).
+- **Foundational Models**: Specify which model powers the agent.
+- **One-Click Install**: Add agents to your chat model list with a single click.
+
 ---
 
 ### Setup: Running Both Services

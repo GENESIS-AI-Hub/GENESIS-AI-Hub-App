@@ -95,7 +95,6 @@ async def get_agent_by_id(agent_id: str, user=Depends(get_verified_user)):
 # RegisterAgent
 ############################
 
-
 @router.post("/register", response_model=AgentModel)
 async def register_agent(
     form_data: RegisterAgentForm,
@@ -164,32 +163,43 @@ async def register_agent_by_url(
         skills = agent_data.get("skills", [])
         default_input_modes = agent_data.get("defaultInputModes", ["text"])
         default_output_modes = agent_data.get("defaultOutputModes", ["text"])
-
-        # Generate new ID for the agent
+        
+        # Use provided profile image or default to favicon
+        profile_image_url = form_data.profile_image_url or agent_data.get("profileImageUrl") or "/static/favicon.png"
+        
+        # Check if agent with this URL already exists
+        existing_agent = Agents.get_agent_by_url(url)
+        if existing_agent:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An agent with this URL is already registered",
+            )
+        
+        # Generate a unique ID for the agent
         agent_id = str(uuid.uuid4())
-
-        # Create agent with fetched data
+        
+        # Insert the agent into the database
         agent = Agents.insert_new_agent(
             id=agent_id,
             name=name,
             description=description,
-            endpoint=url,
             url=url,
             version=version,
             capabilities=capabilities,
             skills=skills,
             default_input_modes=default_input_modes,
             default_output_modes=default_output_modes,
+            profile_image_url=profile_image_url,
             user_id=user.id,
         )
-
+        
         if agent:
             return agent
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ERROR_MESSAGES.DEFAULT(),
         )
-
+        
     except requests.exceptions.RequestException as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -36,6 +36,9 @@
 				goto('/');
 			} else if ($page.url.pathname.includes('/tools') && !$user?.permissions?.workspace?.tools) {
 				goto('/');
+			} else if ($page.url.pathname.includes('/agents') && !$user?.permissions?.workspace?.models) {
+				// Reusing models permission for now as agents are similar to models
+				goto('/');
 			}
 		}
 
@@ -119,6 +122,17 @@
 								href="/workspace/tools"
 							>
 								{$i18n.t('Tools')}
+							</a>
+						{/if}
+
+						{#if $user?.role === 'admin' || $user?.permissions?.workspace?.models}
+							<a
+								class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes('/workspace/agents')
+									? ''
+									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
+								href="/workspace/agents"
+							>
+								{$i18n.t('Agents')}
 							</a>
 						{/if}
 					</div>

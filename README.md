@@ -33,6 +33,16 @@ GH: jsweet8258
 - `front/`: Contains the React frontend application.
 - `back/`: Contains the FastAPI backend application.
 - `deploy.sh`: A script to deploy both applications to Google Cloud Run.
+- `open-webui/`: A customized fork of Open WebUI with A2A Agent Registry support.
+
+## Open WebUI & Agent Registry
+
+This project includes a customized version of **Open WebUI** that features a decentralized **A2A Agent Registry**.
+- **Agent Registry**: Discover, share, and install AI agents.
+- **Workspace Integration**: Manage agents directly from the UI.
+- **A2A Protocol**: Full support for Agent-to-Agent communication.
+
+For detailed documentation, please refer to [open-webui/README.md](./open-webui/README.md).
 
 ## Prerequisites
 
