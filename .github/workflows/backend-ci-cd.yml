@@ -27,7 +27,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest
+          pip install pytest httpx
 
       - name: Run backend tests (skipping HTTP contract tests)
         run: pytest -m "not contract"
