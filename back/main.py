@@ -364,7 +364,7 @@ def send_message(chat_id: str, message_request: SendMessageRequest):
         timestamp=datetime.now(),
     )
 
-    #messages_db[chat_id].append(assistant_message.dict())
+    #messages_db[chat_id].append(assistant_message.dict()) #
 
     # Update chat timestamp
     chats_db[chat_id]["updated_at"] = datetime.now()
