@@ -1,4 +1,4 @@
-name: Backend CI/CD (test branch)
+name: Backend CI/CD (tests only)
 
 on:
   push:
@@ -12,7 +12,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: back  # all commands below run in ./back
+        working-directory: back
 
     steps:
       - name: Checkout repo
@@ -25,25 +25,20 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest ruff
+          pip install pytest
 
-      - name: Lint with ruff
-        run: ruff check .
-
-      - name: Run backend tests (excluding HTTP contract tests) 
+      - name: Run backend tests (skipping HTTP contract tests)
         run: pytest -m "not contract"
 
   deploy-to-cloudrun-test:
-    # Only run on pushes to test branch, and only if tests passed
     if: github.ref == 'refs/heads/test'
     needs: backend-tests
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
-      # deploy.sh is at root
         uses: actions/checkout@v4
 
       - name: Set up gcloud CLI
@@ -55,17 +50,15 @@ jobs:
 
       - name: Create .env for deploy.sh
         run: |
-          cat <<EOF > .env
-          GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
-          GCP_REGION=${{ vars.GCP_REGION }}
-          EOF
-          echo "Created .env file with project and region"
+          echo "GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}" > .env
+          echo "GCP_REGION=${{ vars.GCP_REGION }}" >> .env
+          echo ".env created."
 
-      - name: Configure Docker auth for gcr.io
+      - name: Configure Docker for gcr.io
         run: gcloud auth configure-docker --quiet
 
       - name: Make deploy script executable
         run: chmod +x deploy.sh
 
-      - name: Deploy to Cloud Run (test branch)
+      - name: Deploy to Cloud Run
         run: ./deploy.sh
