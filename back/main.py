@@ -78,7 +78,7 @@ def SendMessageRequest(params: Dict[str, Any]) -> Result:
             files=files if files else None,
         )
 
-        messages_db[chat_id].append(user_message.dict())
+        #messages_db[chat_id].append(user_message.dict())
 
         # Get the agent for this chat
         chat_agent_id = chats_db[chat_id]["agent_id"]
