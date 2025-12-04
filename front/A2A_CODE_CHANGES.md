@@ -199,7 +199,7 @@ def downgrade():
 
 ```python
 def test_a2a_integration(agent_url, openwebui_url, api_key, agent_name):
-    # 1. Test Open WebUI connection
+    # 1. Test OSU Genesis AI Hub connection
     response = requests.get(f"{openwebui_url}/api/health")
     assert response.status_code == 200
     

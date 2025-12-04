@@ -277,7 +277,7 @@ class AppConfig:
             self._state[key].save()
 
             if self._redis:
-                redis_key = f"open-webui:config:{key}"
+                redis_key = f"osu-genesis-ai-hub:config:{key}"
                 self._redis.set(redis_key, json.dumps(self._state[key].value))
 
     def __getattr__(self, key):

@@ -1,16 +1,16 @@
 # A2A Agent Integration - Quick Start Guide
 
-This guide provides setup instructions for using A2A (Agent-to-Agent) agents with Open WebUI.
+This guide provides setup instructions for using A2A (Agent-to-Agent) agents with OSU Genesis AI Hub.
 
 ## Overview
 
-A2A integration enables Open WebUI to communicate with external AI agents using the A2A protocol (JSON-RPC 2.0). Agents appear as selectable models in the chat interface.
+A2A integration enables OSU Genesis AI Hub to communicate with external AI agents using the A2A protocol (JSON-RPC 2.0). Agents appear as selectable models in the chat interface.
 
 ## Prerequisites
 
-- Open WebUI v0.6.5 or later
+- OSU Genesis AI Hub v0.6.5 or later
 - An A2A-compatible agent running
-- Admin access to Open WebUI
+- Admin access to OSU Genesis AI Hub
 
 ## Setup
 
@@ -28,7 +28,7 @@ Verify the agent is running:
 curl http://localhost:8001/.well-known/agent.json
 ```
 
-### 2. Start Open WebUI
+### 2. Start OSU Genesis AI Hub
 
 ```bash
 cd backend
@@ -40,7 +40,7 @@ Access at: http://localhost:8080
 
 ### 3. Add Agent in Admin Settings
 
-1. Log in to Open WebUI
+1. Log in to OSU Genesis AI Hub
 2. Navigate to: Settings > Admin Settings > Connections
 3. Scroll to **A2A Agents** section
 4. Toggle switch to enable A2A agents
@@ -136,7 +136,7 @@ curl -X POST http://localhost:8080/api/v1/configs/a2a_agents/verify \
       "id": 1
     }'
   ```
-- Check Open WebUI backend logs for errors
+- Check OSU Genesis AI Hub backend logs for errors
 
 ## Creating Custom A2A Agents
 
@@ -227,7 +227,7 @@ python test_a2a_integration.py \
 ```
 
 The test verifies:
-- Open WebUI connection
+- OSU Genesis AI Hub connection
 - Agent discovery
 - Configuration API
 - Agent registration
@@ -246,7 +246,7 @@ To get your API key:
 
 - JSON-RPC 2.0 Spec: https://www.jsonrpc.org/specification
 - Google ADK: https://google.github.io/adk-docs/
-- Open WebUI: https://github.com/open-webui/open-webui
+- OSU Genesis AI Hub: https://github.com/open-webui/open-webui
 # Activate agent's environment (if using venv)
 source .venv/bin/activate
 
@@ -259,10 +259,10 @@ Verify the agent is running:
 curl http://localhost:8001/.well-known/agent-card.json
 ```
 
-### Step 2: Start Open WebUI
+### Step 2: Start OSU Genesis AI Hub
 
 ```bash
-# Navigate to Open WebUI backend
+# Navigate to OSU Genesis AI Hub backend
 cd /Users/minsoup/GENESIS-AI-Hub-App/open-webui/backend
 
 # Activate conda environment
@@ -276,7 +276,7 @@ Open your browser to: http://localhost:8080
 
 ### Step 3: Add Agent in Settings (Web UI)
 
-1. **Log in to Open WebUI** at http://localhost:8080
+1. **Log in to OSU Genesis AI Hub** at http://localhost:8080
 
 2. **Open Admin Settings:**
    - Click your profile icon (top-right)
@@ -332,7 +332,7 @@ python test_a2a_integration.py \
 ```
 
 The test will verify:
-- ✓ Open WebUI is accessible
+- ✓ OSU Genesis AI Hub is accessible
 - ✓ Agent discovery endpoint works
 - ✓ A2A configuration API works
 - ✓ Agent registration succeeds
@@ -446,7 +446,7 @@ curl -X POST http://localhost:8080/api/v1/configs/a2a_agents/verify \
    - Should return JSON-RPC 2.0 response
    - Result should contain `artifacts[].parts[].text`
 
-4. Check Open WebUI backend logs:
+4. Check OSU Genesis AI Hub backend logs:
    ```bash
    # In terminal running `sh dev.sh`
    # Look for A2A-related errors
@@ -458,7 +458,7 @@ curl -X POST http://localhost:8080/api/v1/configs/a2a_agents/verify \
 
 **Notes:**
 - A2A protocol doesn't inherently support streaming
-- Open WebUI simulates streaming by chunking the full response
+- OSU Genesis AI Hub simulates streaming by chunking the full response
 - This is expected behavior - agent receives and processes full message
 - Response is then word-by-word streamed to UI for better UX
 
@@ -554,7 +554,7 @@ uvicorn my_agent:app --host localhost --port 8001
 ## Benefits of A2A Integration
 
 1. **Unified Interface**: Users interact with agents through familiar chat UI
-2. **No Code Changes**: Add/remove agents without modifying Open WebUI code
+2. **No Code Changes**: Add/remove agents without modifying OSU Genesis AI Hub code
 3. **Multi-Agent**: Support multiple agents simultaneously
 4. **Flexible**: Agents can be local or remote
 5. **Standardized**: Uses open JSON-RPC 2.0 and A2A protocols
@@ -569,7 +569,7 @@ uvicorn my_agent:app --host localhost --port 8001
 ## Support
 
 For issues or questions:
-1. Check Open WebUI logs: Terminal running `sh dev.sh`
+1. Check OSU Genesis AI Hub logs: Terminal running `sh dev.sh`
 2. Check agent logs: Terminal running your agent
 3. Review README.md for detailed protocol information
 4. Use the test script to diagnose issues
@@ -578,4 +578,4 @@ For issues or questions:
 
 - **Google ADK Documentation**: https://google.github.io/adk-docs/
 - **A2A Protocol Spec**: Reference Google ADK A2A implementation
-- **Open WebUI Docs**: https://docs.openwebui.com/
+- **OSU Genesis AI Hub Docs**: https://docs.openwebui.com/

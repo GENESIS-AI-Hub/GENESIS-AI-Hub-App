@@ -17,7 +17,7 @@ log.setLevel(SRC_LOG_LEVELS["RAG"])
 
 class QdrantClient:
     def __init__(self):
-        self.collection_prefix = "open-webui"
+        self.collection_prefix = "osu-genesis-ai-hub"
         self.QDRANT_URI = QDRANT_URI
         self.QDRANT_API_KEY = QDRANT_API_KEY
         self.client = (

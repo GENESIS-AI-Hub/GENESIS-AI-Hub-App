@@ -1,7 +1,7 @@
 #!/bin/bash
 
-image_name="open-webui"
-container_name="open-webui"
+image_name="osu-genesis-ai-hub"
+container_name="osu-genesis-ai-hub"
 host_port=3000
 container_port=8080
 

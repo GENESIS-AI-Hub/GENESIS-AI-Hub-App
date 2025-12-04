@@ -259,16 +259,14 @@
 				const { done, content, title } = data;
 
 				if (done) {
-					if ($isLastActiveTab) {
-						if ($settings?.notificationEnabled ?? false) {
-							new Notification(`${title} | Open WebUI`, {
-								body: content,
-								icon: `${WEBUI_BASE_URL}/static/favicon.png`
-							});
-						}
+				if ($isLastActiveTab) {
+					if ($settings?.notificationEnabled ?? false) {
+						new Notification(`${title} | OSU Genesis AI Hub`, {
+							body: content,
+							icon: `${WEBUI_BASE_URL}/static/osu-logo.png`
+						});
 					}
-
-					toast.custom(NotificationToast, {
+				}					toast.custom(NotificationToast, {
 						componentProps: {
 							onClick: () => {
 								goto(`/c/${event.chat_id}`);
@@ -407,17 +405,15 @@
 			const type = event?.data?.type ?? null;
 			const data = event?.data?.data ?? null;
 
-			if (type === 'message') {
-				if ($isLastActiveTab) {
-					if ($settings?.notificationEnabled ?? false) {
-						new Notification(`${data?.user?.name} (#${event?.channel?.name}) | Open WebUI`, {
-							body: data?.content,
-							icon: data?.user?.profile_image_url ?? `${WEBUI_BASE_URL}/static/favicon.png`
-						});
-					}
+		if (type === 'message') {
+			if ($isLastActiveTab) {
+				if ($settings?.notificationEnabled ?? false) {
+					new Notification(`${data?.user?.name} (#${event?.channel?.name}) | OSU Genesis AI Hub`, {
+						body: data?.content,
+						icon: data?.user?.profile_image_url ?? `${WEBUI_BASE_URL}/static/osu-logo.png`
+					});
 				}
-
-				toast.custom(NotificationToast, {
+			}				toast.custom(NotificationToast, {
 					componentProps: {
 						onClick: () => {
 							goto(`/channels/${event.channel_id}`);
@@ -607,7 +603,7 @@
 
 <svelte:head>
 	<title>{$WEBUI_NAME}</title>
-	<link crossorigin="anonymous" rel="icon" href="{WEBUI_BASE_URL}/static/favicon.png" />
+	<link crossorigin="anonymous" rel="icon" href="{WEBUI_BASE_URL}/static/osu-logo.png" />
 
 	<!-- rosepine themes have been disabled as it's not up to date with our latest version. -->
 	<!-- feel free to make a PR to fix if anyone wants to see it return -->

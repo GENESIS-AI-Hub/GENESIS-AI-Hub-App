@@ -30,13 +30,13 @@ GH: jsweet8258
 
 ## Project Structure
 
-- `front/`: A customized fork of Open WebUI with A2A Agent Registry support.
+- `front/`: A customized AI interface with A2A Agent Registry support.
 - `back/`: Contains the FastAPI backend application.
 - `deploy.sh`: A script to deploy both applications to Google Cloud Run.
 
-## Open WebUI & Agent Registry
+## OSU Genesis AI Hub & Agent Registry
 
-This project includes a customized version of **Open WebUI** that features a decentralized **A2A Agent Registry**.
+This project includes a customized AI platform that features a decentralized **A2A Agent Registry**.
 - **Agent Registry**: Discover, share, and install AI agents.
 - **Workspace Integration**: Manage agents directly from the UI.
 - **A2A Protocol**: Full support for Agent-to-Agent communication.
@@ -69,9 +69,9 @@ For detailed documentation, please refer to [front/README.md](./front/README.md)
 
 - Note: To lint, use `ruff check`
 
-### Frontend (Open WebUI)
+### Frontend (OSU Genesis AI Hub)
 
-For detailed setup and development instructions for the Open WebUI frontend, please refer to [front/README.md](./front/README.md).
+For detailed setup and development instructions for the OSU Genesis AI Hub frontend, please refer to [front/README.md](./front/README.md).
 
 ## Deployment
 

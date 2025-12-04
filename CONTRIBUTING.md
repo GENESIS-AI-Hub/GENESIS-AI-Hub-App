@@ -62,9 +62,9 @@ run the app locally.
     ```
     The backend will be available at `http://localhost:8000`.
 
-#### Frontend (Open WebUI)
+#### Frontend (OSU Genesis AI Hub)
 
-For detailed setup and development instructions for the Open WebUI frontend, please refer to `front/README.md`.
+For detailed setup and development instructions for the OSU Genesis AI Hub frontend, please refer to `front/README.md`.
 
 ## Branching & Workflow
 Our workflow is GitFlow.
@@ -125,8 +125,8 @@ To automatically close an issue tracked on your project board or GitHub reposito
 Name the formatter/linter, config file locations, and the exact commands to
 check/fix locally.
 
-### Front end (Open WebUI):
-The frontend is based on Open WebUI. For linting and formatting:
+### Front end (OSU Genesis AI Hub):
+The frontend is based on OSU Genesis AI Hub. For linting and formatting:
 - Commands:
     - `npm run lint` - Lints frontend, types, and backend
     - `npm run lint:frontend` - Lints frontend with ESLint

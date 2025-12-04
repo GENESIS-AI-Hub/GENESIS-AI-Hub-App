@@ -1,8 +1,8 @@
-# Open WebUI 👋
+# OSU Genesis AI Hub 🦫
 
-**Open WebUI is an [extensible](https://docs.openwebui.com/features/plugin/), feature-rich, and user-friendly self-hosted AI platform designed to operate entirely offline.** It supports various LLM runners like **Ollama** and **OpenAI-compatible APIs**, with **built-in inference engine** for RAG, making it a **powerful AI deployment solution**.
+**OSU Genesis AI Hub is an extensible, feature-rich, and user-friendly AI collaboration platform designed for Oregon State University.** It supports various LLM runners like **Ollama** and **OpenAI-compatible APIs**, with **built-in inference engine** for RAG and **A2A Agent Registry** for multi-agent collaboration.
 
-![Open WebUI Demo](./demo.gif)
+![OSU Genesis AI Hub Demo](./demo.gif)
 
 ## Table of Contents
 - [About This Fork](#about-this-fork)
@@ -10,7 +10,7 @@
 - [Part 1: Install Miniforge (Conda)](#part-1-install-miniforge-conda)
 - [Part 2: Install NVM (Node Version Manager)](#part-2-install-nvm-node-version-manager)
 - [Part 3: Clone the Repository](#part-3-clone-the-repository)
-- [Part 4: Build and Run Open WebUI](#part-4-build-and-run-open-webui)
+- [Part 4: Build and Run OSU Genesis AI Hub](#part-4-build-and-run-osu-genesis-ai-hub)
 - [Development Workflow](#development-workflow)
 - [A2A Protocol Integration](#a2a-protocol-integration)
 - [Troubleshooting](#troubleshooting)
@@ -21,9 +21,9 @@
 
 ---
 
-## About This Fork
+## About This Project
 
-This repository is a customized fork of [Open WebUI](https://github.com/open-webui/open-webui) based on **version 0.6.5** (commit: `07d8460126a686de9a99e2662d06106e22c3f6b6`).
+This repository is the OSU Genesis AI Hub, a customized AI platform based on Open WebUI **version 0.6.5** (commit: `07d8460126a686de9a99e2662d06106e22c3f6b6`), specifically designed for Oregon State University's AI collaboration needs.
 
 ### Repository Optimization
 
@@ -173,7 +173,7 @@ git checkout main
 
 ---
 
-## Part 4: Build and Run Open WebUI
+## Part 4: Build and Run OSU Genesis AI Hub
 
 ### Step 1: Set Up Python Environment
 

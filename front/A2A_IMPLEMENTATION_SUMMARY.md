@@ -1,13 +1,13 @@
 # A2A Integration - Technical Implementation
 
-Technical overview of A2A (Agent-to-Agent) integration in Open WebUI.
+Technical overview of A2A (Agent-to-Agent) integration in OSU Genesis AI Hub.
 
 ## Architecture
 
 ```
 User Browser (Chat UI)
     ↓ HTTP/WebSocket
-Open WebUI Backend (FastAPI)
+OSU Genesis AI Hub Backend (FastAPI)
     ↓ JSON-RPC 2.0
 External A2A Agent
 ```
@@ -252,7 +252,7 @@ export const verifyA2AAgent = async (token: string, connection: object) => { ...
 End-to-end integration test:
 
 **Test Steps:**
-1. Verify Open WebUI connection
+1. Verify OSU Genesis AI Hub connection
 2. Fetch agent discovery document
 3. Configure A2A agents via API
 4. Wait for model list refresh

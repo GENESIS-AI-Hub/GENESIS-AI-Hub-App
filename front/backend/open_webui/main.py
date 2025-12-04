@@ -422,9 +422,9 @@ print(
  ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝     ╚══╝╚══╝ ╚══════╝╚═════╝  ╚═════╝ ╚═╝
 
 
-v{VERSION} - building the best open-source AI user interface.
+v{VERSION} - OSU Genesis AI Hub - AI Collaboration Platform for Oregon State University.
 {f"Commit: {WEBUI_BUILD_HASH}" if WEBUI_BUILD_HASH != "dev-build" else ""}
-https://github.com/open-webui/open-webui
+https://github.com/GENESIS-AI-Hub/GENESIS-AI-Hub-App
 """
 )
 
@@ -443,7 +443,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Open WebUI",
+    title="OSU Genesis AI Hub",
     docs_url="/docs" if ENV == "dev" else None,
     openapi_url="/openapi.json" if ENV == "dev" else None,
     redoc_url=None,
@@ -1451,7 +1451,7 @@ async def get_app_latest_release_version(user=Depends(get_verified_user)):
         timeout = aiohttp.ClientTimeout(total=1)
         async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
             async with session.get(
-                "https://api.github.com/repos/open-webui/open-webui/releases/latest"
+                "https://api.github.com/repos/GENESIS-AI-Hub/GENESIS-AI-Hub-App/releases/latest"
             ) as response:
                 response.raise_for_status()
                 data = await response.json()
