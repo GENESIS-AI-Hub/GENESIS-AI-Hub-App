@@ -1,0 +1,4 @@
+google-adk[a2a]
+google-cloud-aiplatform[agents]
+requests
+beautifulsoup4
