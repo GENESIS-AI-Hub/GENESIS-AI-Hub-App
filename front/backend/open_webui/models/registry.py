@@ -3,7 +3,7 @@ import logging
 import time
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, field_validator
-from sqlalchemy import BigInteger, Column, String, Text, Boolean
+from sqlalchemy import BigInteger, Column, String, Text, JSON, Boolean, text
 from sqlalchemy import or_, and_
 from sqlalchemy.exc import IntegrityError
 
@@ -45,6 +45,11 @@ class RegistryAgent(Base):
     is_featured = Column(Boolean, default=False, nullable=False)
     # Only admins may set this. Featured agents appear in the dedicated showcase section.
 
+    # Trust tier — coarse access gate (public / authenticated / privileged)
+    # TODO(#141/#143): replace role→tier mapping with real OSU OIDC scope claims
+    trust_tier = Column(String, nullable=False, server_default=text("'public'"))
+    required_role = Column(String, nullable=True)  # stored, not yet enforced (#141)
+
     created_at = Column(BigInteger)
     updated_at = Column(BigInteger)
 
@@ -61,6 +66,8 @@ class RegistryAgentModel(BaseModel):
     access_control: Optional[dict] = None
     card_url: Optional[str] = None
     is_featured: bool = False
+    trust_tier: str = "public"
+    required_role: Optional[str] = None
     created_at: int
     updated_at: int
 
@@ -88,6 +95,8 @@ class SubmitRegistryAgentForm(BaseModel):
     access_control: Optional[dict] = None
     foundational_model: Optional[str] = None
     image_url: Optional[str] = None
+    trust_tier: str = "public"
+    required_role: Optional[str] = None
 
 
 class UpdateRegistryAgentForm(BaseModel):
@@ -96,6 +105,8 @@ class UpdateRegistryAgentForm(BaseModel):
     description: Optional[str] = None
     image_url: Optional[str] = None
     is_featured: Optional[bool] = None  # admin-only field; enforced in the router
+    trust_tier: Optional[str] = None
+    required_role: Optional[str] = None
 
 
 ####################
@@ -119,6 +130,8 @@ class RegistryAgentsTable:
         tools: Optional[dict] = None,
         access_control: Optional[dict] = None,
         card_url: Optional[str] = None,
+        trust_tier: str = "public",
+        required_role: Optional[str] = None,
     ) -> Optional[RegistryAgentModel]:
         """Insert a new agent into the registry."""
         with get_db() as db:
@@ -135,6 +148,8 @@ class RegistryAgentsTable:
                     "access_control": access_control,
                     "card_url": card_url,
                     "is_featured": False,
+                    "trust_tier": trust_tier,
+                    "required_role": required_role,
                     "created_at": int(time.time()),
                     "updated_at": int(time.time()),
                 }

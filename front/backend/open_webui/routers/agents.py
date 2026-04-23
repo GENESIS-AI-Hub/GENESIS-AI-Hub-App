@@ -23,6 +23,51 @@ from open_webui.utils.a2a_runtime import PROVIDER_DEFAULTS, run_agent_turn
 
 router = APIRouter()
 
+# Tier ordering: higher index = higher privilege
+_TIER_ORDER = {"public": 0, "authenticated": 1, "privileged": 2}
+
+
+def _get_user_scope(user) -> str:
+    """Map the existing Open WebUI role to a trust tier.
+
+    TODO(#141/#143): Replace this with real OSU OIDC scope claims once the
+    identity provider integration in #141 lands.  For now we use the platform
+    role as a proxy:
+      admin   → privileged
+      user    → authenticated
+      pending → public
+    """
+    if user.role == "admin":
+        return "privileged"
+    if user.role == "user":
+        return "authenticated"
+    return "public"
+
+
+def _enforce_tier(agent: AgentModel, user) -> None:
+    """Raise a structured 403 if the user's scope is below the agent's tier."""
+    required = _TIER_ORDER.get(agent.trust_tier or "public", 0)
+    user_scope = _get_user_scope(user)
+    available = _TIER_ORDER.get(user_scope, 0)
+
+    if available >= required:
+        return
+
+    # Distinguish "you need to log in" from "you need step-up MFA"
+    if user_scope == "public":
+        code = "tier_required"
+    else:
+        code = "step_up_required"
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": code,
+            "required_tier": agent.trust_tier,
+            "required_role": agent.required_role,
+        },
+    )
+
 ############################
 # JSON-RPC Message Models
 ############################
@@ -185,6 +230,8 @@ async def register_agent(
         endpoint=form_data.endpoint,
         input_schema=form_data.input_schema,
         output_schema=form_data.output_schema,
+        trust_tier=form_data.trust_tier,
+        required_role=form_data.required_role,
         user_id=user.id,
     )
 
@@ -387,6 +434,8 @@ async def send_message_to_agent(
             detail="Agent not found",
         )
 
+    _enforce_tier(agent, user)
+
     if not agent.endpoint and not agent.url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -432,6 +481,45 @@ async def send_message_to_agent(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing agent response: {str(e)}",
         )
+
+
+############################
+# GetAgentsAsModels
+############################
+
+
+@router.get("/models")
+async def get_agents_as_models(user=Depends(get_verified_user)):
+    """Get all active agents formatted as models for the chat interface"""
+    agents = Agents.get_agents()
+
+    models = []
+    for agent in agents:
+        model_id = f"agent:{agent.id}"
+        models.append({
+            "id": model_id,
+            "name": agent.name,
+            "object": "model",
+            "created": agent.created_at,
+            "owned_by": "a2a-agent",
+            "agent": {
+                "id": agent.id,
+                "description": agent.description,
+                "endpoint": agent.endpoint or agent.url,
+                "capabilities": agent.capabilities,
+                "skills": agent.skills,
+            },
+            "info": {
+                "meta": {
+                    "description": agent.description,
+                    "capabilities": agent.capabilities,
+                    "trust_tier": agent.trust_tier,
+                    "required_role": agent.required_role,
+                }
+            }
+        })
+
+    return {"data": models}
 
 
 ############################
@@ -539,6 +627,8 @@ async def deploy_agent(
         model=model,
         deployment_mode=deployment_mode,
         deployment_status="ready",
+        trust_tier=form_data.trust_tier,
+        required_role=form_data.required_role,
         user_id=user.id,
     )
 
@@ -563,6 +653,8 @@ async def deploy_agent(
                     "skills": card_skills,
                 },
                 access_control=None,
+                trust_tier=form_data.trust_tier,
+                required_role=form_data.required_role,
             )
         except Exception as e:
             # Registry publish is best-effort; don't fail the deploy.
