@@ -1,5 +1,3 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
 # dependencies
 /node_modules
 /.pnp
@@ -27,6 +25,19 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+.env.cloud.generated
+
+# Google Cloud credentials
+*-sa-key.json
+*service-account*.json
+genesis-ai-hub-sa-key.json
+
+# Cloud SQL Proxy (local machine-specific)
+cloud_sql_proxy
+start_cloud_sql_proxy.sh
+
+# local plaintext chat logs
+chat.txt
 
 # vercel
 .vercel

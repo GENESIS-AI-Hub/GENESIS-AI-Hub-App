@@ -4,13 +4,19 @@ import time
 import uuid
 from typing import Optional
 
+from open_webui.utils.encryption import (
+    ENABLE_CHAT_ENCRYPTION,
+    decrypt_chat_content,
+    encrypt_chat_content,
+)
+
 from open_webui.internal.db import Base, get_db
 from open_webui.models.tags import TagModel, Tag, Tags
 from open_webui.env import SRC_LOG_LEVELS
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import BigInteger, Boolean, Column, String, Text, JSON
-from sqlalchemy import or_, func, select, and_, text
+from sqlalchemy import BigInteger, Boolean, Column, LargeBinary, String, Text, JSON
+from sqlalchemy import or_, func, and_, text
 from sqlalchemy.sql import exists
 
 ####################
@@ -39,6 +45,23 @@ class Chat(Base):
     meta = Column(JSON, server_default="{}")
     folder_id = Column(Text, nullable=True)
 
+    # --- User-level encryption fields (chat-privacy architecture §1, §5) ---
+    # key_ref: KMS resource path for the user's wrapping key. NULL = not encrypted.
+    key_ref = Column(Text, nullable=True)
+    # encrypted_dek: AES-256 DEK wrapped (encrypted) by the user's KMS key.
+    encrypted_dek = Column(LargeBinary, nullable=True)
+    # content_enc: AES-256-GCM encrypted JSON blob of the `chat` field.
+    # When present, the `chat` column is NULL (plaintext never stored together
+    # with the ciphertext in the same row).
+    content_enc = Column(LargeBinary, nullable=True)
+    # session_type: tracks the identity context of the session that created this chat.
+    session_type = Column(String, nullable=True)  # 'authenticated' | 'guest' | 'a2a'
+    # expires_at: epoch timestamp for guest chat TTL; NULL for authenticated users.
+    expires_at = Column(BigInteger, nullable=True)
+    # key_version: KMS key version used to wrap encrypted_dek. Allows targeted
+    # re-encryption jobs after key rotation without touching all records.
+    key_version = Column(String, nullable=True)
+
 
 class ChatModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -57,6 +80,12 @@ class ChatModel(BaseModel):
 
     meta: dict = {}
     folder_id: Optional[str] = None
+
+    # Encryption metadata — populated when content_enc is present.
+    key_ref: Optional[str] = None
+    session_type: Optional[str] = None
+    expires_at: Optional[int] = None
+    key_version: Optional[str] = None
 
 
 ####################
@@ -104,30 +133,69 @@ class ChatTitleIdResponse(BaseModel):
     created_at: int
 
 
+def _decrypt_row(row: "Chat") -> ChatModel:
+    """
+    Build a ChatModel from a DB row, transparently decrypting content_enc
+    when it is present (i.e. when the chat was stored encrypted).
+    """
+    model = ChatModel.model_validate(row)
+    if row.content_enc is not None and row.encrypted_dek is not None and row.key_ref:
+        try:
+            model.chat = decrypt_chat_content(row.encrypted_dek, row.content_enc, row.key_ref)
+        except Exception as e:
+            log.error(f"Failed to decrypt chat {row.id}: {e}")
+            model.chat = {}
+    return model
+
+
 class ChatTable:
-    def insert_new_chat(self, user_id: str, form_data: ChatForm) -> Optional[ChatModel]:
+    def insert_new_chat(
+        self,
+        user_id: str,
+        form_data: ChatForm,
+        key_ref: Optional[str] = None,
+        session_type: Optional[str] = "authenticated",
+    ) -> Optional[ChatModel]:
+        """
+        Insert a new chat record.
+
+        When ENABLE_CHAT_ENCRYPTION is true and key_ref is provided, the chat
+        content is stored encrypted (AES-256 envelope encryption). The plaintext
+        `chat` column is set to None so only the ciphertext is persisted.
+        """
         with get_db() as db:
             id = str(uuid.uuid4())
-            chat = ChatModel(
-                **{
-                    "id": id,
-                    "user_id": user_id,
-                    "title": (
-                        form_data.chat["title"]
-                        if "title" in form_data.chat
-                        else "New Chat"
-                    ),
-                    "chat": form_data.chat,
-                    "created_at": int(time.time()),
-                    "updated_at": int(time.time()),
-                }
-            )
+            now = int(time.time())
+            title = form_data.chat.get("title", "New Chat")
 
-            result = Chat(**chat.model_dump())
+            # Build the SQLAlchemy row directly so binary fields (encrypted_dek,
+            # content_enc) are not lost through ChatModel's Pydantic serialization.
+            encrypted_dek: Optional[bytes] = None
+            content_enc: Optional[bytes] = None
+            stored_chat = form_data.chat
+            stored_key_ref: Optional[str] = None
+
+            if ENABLE_CHAT_ENCRYPTION and key_ref:
+                encrypted_dek, content_enc = encrypt_chat_content(form_data.chat, key_ref)
+                stored_chat = {}  # do not persist plaintext alongside ciphertext
+                stored_key_ref = key_ref
+
+            result = Chat(
+                id=id,
+                user_id=user_id,
+                title=title,
+                chat=stored_chat,
+                created_at=now,
+                updated_at=now,
+                session_type=session_type,
+                key_ref=stored_key_ref,
+                encrypted_dek=encrypted_dek,
+                content_enc=content_enc,
+            )
             db.add(result)
             db.commit()
             db.refresh(result)
-            return ChatModel.model_validate(result) if result else None
+            return _decrypt_row(result) if result else None
 
     def import_chat(
         self, user_id: str, form_data: ChatImportForm
@@ -156,19 +224,35 @@ class ChatTable:
             db.add(result)
             db.commit()
             db.refresh(result)
-            return ChatModel.model_validate(result) if result else None
+            return _decrypt_row(result) if result else None
 
     def update_chat_by_id(self, id: str, chat: dict) -> Optional[ChatModel]:
+        """
+        Update chat content. When the existing row is encrypted (key_ref present),
+        re-encrypt the updated content before persisting.
+        """
         try:
             with get_db() as db:
                 chat_item = db.get(Chat, id)
-                chat_item.chat = chat
-                chat_item.title = chat["title"] if "title" in chat else "New Chat"
+                chat_item.title = chat.get("title", "New Chat")
                 chat_item.updated_at = int(time.time())
+
+                if (
+                    ENABLE_CHAT_ENCRYPTION
+                    and chat_item.key_ref
+                ):
+                    encrypted_dek, content_enc = encrypt_chat_content(
+                        chat, chat_item.key_ref
+                    )
+                    chat_item.chat = {}  # do not store plaintext
+                    chat_item.encrypted_dek = encrypted_dek
+                    chat_item.content_enc = content_enc
+                else:
+                    chat_item.chat = chat
+
                 db.commit()
                 db.refresh(chat_item)
-
-                return ChatModel.model_validate(chat_item)
+                return _decrypt_row(chat_item)
         except Exception:
             return None
 
@@ -316,7 +400,7 @@ class ChatTable:
                 db.commit()
                 db.refresh(shared_chat)
 
-                return ChatModel.model_validate(shared_chat)
+                return _decrypt_row(shared_chat)
         except Exception:
             return None
 
@@ -339,7 +423,7 @@ class ChatTable:
                 chat.share_id = share_id
                 db.commit()
                 db.refresh(chat)
-                return ChatModel.model_validate(chat)
+                return _decrypt_row(chat)
         except Exception:
             return None
 
@@ -351,7 +435,7 @@ class ChatTable:
                 chat.updated_at = int(time.time())
                 db.commit()
                 db.refresh(chat)
-                return ChatModel.model_validate(chat)
+                return _decrypt_row(chat)
         except Exception:
             return None
 
@@ -363,7 +447,7 @@ class ChatTable:
                 chat.updated_at = int(time.time())
                 db.commit()
                 db.refresh(chat)
-                return ChatModel.model_validate(chat)
+                return _decrypt_row(chat)
         except Exception:
             return None
 
@@ -387,7 +471,7 @@ class ChatTable:
                 # .limit(limit).offset(skip)
                 .all()
             )
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return [_decrypt_row(chat) for chat in all_chats]
 
     def get_chat_list_by_user_id(
         self,
@@ -409,7 +493,7 @@ class ChatTable:
                 query = query.limit(limit)
 
             all_chats = query.all()
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return [_decrypt_row(chat) for chat in all_chats]
 
     def get_chat_title_id_list_by_user_id(
         self,
@@ -460,13 +544,13 @@ class ChatTable:
                 .order_by(Chat.updated_at.desc())
                 .all()
             )
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return [_decrypt_row(chat) for chat in all_chats]
 
     def get_chat_by_id(self, id: str) -> Optional[ChatModel]:
         try:
             with get_db() as db:
                 chat = db.get(Chat, id)
-                return ChatModel.model_validate(chat)
+                return _decrypt_row(chat)
         except Exception:
             return None
 
@@ -488,7 +572,7 @@ class ChatTable:
         try:
             with get_db() as db:
                 chat = db.query(Chat).filter_by(id=id, user_id=user_id).first()
-                return ChatModel.model_validate(chat)
+                return _decrypt_row(chat)
         except Exception:
             return None
 
@@ -499,7 +583,7 @@ class ChatTable:
                 # .limit(limit).offset(skip)
                 .order_by(Chat.updated_at.desc())
             )
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return [_decrypt_row(chat) for chat in all_chats]
 
     def get_chats_by_user_id(self, user_id: str) -> list[ChatModel]:
         with get_db() as db:
@@ -508,7 +592,7 @@ class ChatTable:
                 .filter_by(user_id=user_id)
                 .order_by(Chat.updated_at.desc())
             )
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return [_decrypt_row(chat) for chat in all_chats]
 
     def get_pinned_chats_by_user_id(self, user_id: str) -> list[ChatModel]:
         with get_db() as db:
@@ -517,7 +601,7 @@ class ChatTable:
                 .filter_by(user_id=user_id, pinned=True, archived=False)
                 .order_by(Chat.updated_at.desc())
             )
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return [_decrypt_row(chat) for chat in all_chats]
 
     def get_archived_chats_by_user_id(self, user_id: str) -> list[ChatModel]:
         with get_db() as db:
@@ -526,7 +610,7 @@ class ChatTable:
                 .filter_by(user_id=user_id, archived=True)
                 .order_by(Chat.updated_at.desc())
             )
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return [_decrypt_row(chat) for chat in all_chats]
 
     def get_chats_by_user_id_and_search_text(
         self,
@@ -677,7 +761,7 @@ class ChatTable:
             log.info(f"The number of chats: {len(all_chats)}")
 
             # Validate and return chats
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return [_decrypt_row(chat) for chat in all_chats]
 
     def get_chats_by_folder_id_and_user_id(
         self, folder_id: str, user_id: str
@@ -690,7 +774,7 @@ class ChatTable:
             query = query.order_by(Chat.updated_at.desc())
 
             all_chats = query.all()
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return [_decrypt_row(chat) for chat in all_chats]
 
     def get_chats_by_folder_ids_and_user_id(
         self, folder_ids: list[str], user_id: str
@@ -705,7 +789,7 @@ class ChatTable:
             query = query.order_by(Chat.updated_at.desc())
 
             all_chats = query.all()
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return [_decrypt_row(chat) for chat in all_chats]
 
     def update_chat_folder_id_by_id_and_user_id(
         self, id: str, user_id: str, folder_id: str
@@ -718,7 +802,7 @@ class ChatTable:
                 chat.pinned = False
                 db.commit()
                 db.refresh(chat)
-                return ChatModel.model_validate(chat)
+                return _decrypt_row(chat)
         except Exception:
             return None
 
@@ -757,7 +841,7 @@ class ChatTable:
 
             all_chats = query.all()
             log.debug(f"all_chats: {all_chats}")
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return [_decrypt_row(chat) for chat in all_chats]
 
     def add_chat_tag_by_id_and_user_id_and_tag_name(
         self, id: str, user_id: str, tag_name: str
@@ -778,7 +862,7 @@ class ChatTable:
 
                 db.commit()
                 db.refresh(chat)
-                return ChatModel.model_validate(chat)
+                return _decrypt_row(chat)
         except Exception:
             return None
 

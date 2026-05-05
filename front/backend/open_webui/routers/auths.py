@@ -372,6 +372,16 @@ async def signin(request: Request, response: Response, form_data: SigninForm):
         user = Auths.authenticate_user(form_data.email.lower(), form_data.password)
 
     if user:
+        # Lazy-provision a KMS key for existing users who predate encryption.
+        if not user.key_ref:
+            from open_webui.utils.encryption import ENABLE_CHAT_ENCRYPTION, create_user_key_ref
+            if ENABLE_CHAT_ENCRYPTION:
+                try:
+                    key_ref = create_user_key_ref(user.id)
+                    Users.update_user_by_id(user.id, {"key_ref": key_ref})
+                    user = Users.get_user_by_id(user.id)
+                except Exception as exc:
+                    log.error(f"Failed to provision encryption key on signin for {user.id}: {exc}")
 
         expires_delta = parse_duration(request.app.state.config.JWT_EXPIRES_IN)
         expires_at = None
