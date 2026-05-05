@@ -1,7 +1,11 @@
+import logging
 import time
 from typing import Optional
 
 from open_webui.internal.db import Base, JSONField, get_db
+from open_webui.utils.encryption import ENABLE_CHAT_ENCRYPTION, create_user_key_ref
+
+log = logging.getLogger(__name__)
 
 
 from open_webui.models.chats import Chats
@@ -35,6 +39,12 @@ class User(Base):
 
     oauth_sub = Column(Text, unique=True)
 
+    # KMS key reference for per-user envelope encryption (§1 of chat-privacy architecture).
+    # Stores the KMS resource path (e.g. GCP Cloud KMS key name) — never the raw key.
+    # NULL for users created before encryption was enabled; populated on first login
+    # or lazily on first encrypted chat write.
+    key_ref = Column(Text, nullable=True)
+
 
 class UserSettings(BaseModel):
     ui: Optional[dict] = {}
@@ -58,6 +68,9 @@ class UserModel(BaseModel):
     info: Optional[dict] = None
 
     oauth_sub: Optional[str] = None
+
+    # KMS key reference for per-user AES-256 envelope encryption.
+    key_ref: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -104,6 +117,18 @@ class UsersTable:
         role: str = "pending",
         oauth_sub: Optional[str] = None,
     ) -> Optional[UserModel]:
+        """
+        Create a new user record. When ENABLE_CHAT_ENCRYPTION is true,
+        a per-user KMS key is provisioned and its reference is stored on
+        the user record (§1 of the chat-privacy architecture).
+        """
+        key_ref: Optional[str] = None
+        if ENABLE_CHAT_ENCRYPTION:
+            try:
+                key_ref = create_user_key_ref(id)
+            except Exception as exc:
+                log.error(f"Failed to provision encryption key for user {id}: {exc}")
+
         with get_db() as db:
             user = UserModel(
                 **{
@@ -116,6 +141,7 @@ class UsersTable:
                     "created_at": int(time.time()),
                     "updated_at": int(time.time()),
                     "oauth_sub": oauth_sub,
+                    "key_ref": key_ref,
                 }
             )
             result = User(**user.model_dump())
