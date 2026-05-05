@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Optional, List
+from typing import Literal, Optional, List
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import BigInteger, Column, String, Text, Boolean, text
 from sqlalchemy.exc import IntegrityError
@@ -75,7 +75,7 @@ class AgentModel(BaseModel):
     model: Optional[str] = None
     deployment_mode: Optional[str] = None
     deployment_status: Optional[str] = None
-    trust_tier: str = "public"
+    trust_tier: Literal["public", "authenticated", "privileged"] = "public"
     required_role: Optional[str] = None
     is_active: bool = True
     created_at: int
@@ -97,7 +97,7 @@ class AgentResponse(BaseModel):
     url: Optional[str] = None
     capabilities: Optional[dict] = None
     skills: Optional[List[dict]] = None
-    trust_tier: str = "public"
+    trust_tier: Literal["public", "authenticated", "privileged"] = "public"
     required_role: Optional[str] = None
     is_active: bool = True
 
@@ -108,7 +108,7 @@ class RegisterAgentForm(BaseModel):
     endpoint: Optional[str] = None
     input_schema: Optional[dict] = None
     output_schema: Optional[dict] = None
-    trust_tier: str = "public"
+    trust_tier: Literal["public", "authenticated", "privileged"] = "public"
     required_role: Optional[str] = None
 
 
@@ -123,7 +123,7 @@ class AgentUpdateForm(BaseModel):
     endpoint: Optional[str] = None
     url: Optional[str] = None
     is_active: Optional[bool] = None
-    trust_tier: Optional[str] = None
+    trust_tier: Optional[Literal["public", "authenticated", "privileged"]] = None
     required_role: Optional[str] = None
 
 
@@ -136,7 +136,7 @@ class DeployAgentForm(BaseModel):
     profile_image_url: Optional[str] = None
     publish_to_registry: bool = True
     deploy_to_cloud_run: bool = False
-    trust_tier: str = "public"
+    trust_tier: Literal["public", "authenticated", "privileged"] = "public"
     required_role: Optional[str] = None
 
     model_config = ConfigDict(protected_namespaces=())

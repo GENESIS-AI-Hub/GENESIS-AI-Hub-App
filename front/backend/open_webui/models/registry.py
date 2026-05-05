@@ -2,7 +2,7 @@ import json
 import logging
 import time
 import logging
-from typing import Optional, List
+from typing import Literal, Optional, List
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import BigInteger, Column, String, Text, JSON, Boolean, text
 from sqlalchemy import or_, and_
@@ -67,7 +67,7 @@ class RegistryAgentModel(BaseModel):
     access_control: Optional[dict] = None
     card_url: Optional[str] = None
     is_featured: bool = False
-    trust_tier: str = "public"
+    trust_tier: Literal["public", "authenticated", "privileged"] = "public"
     required_role: Optional[str] = None
     created_at: int
     updated_at: int
@@ -96,7 +96,7 @@ class SubmitRegistryAgentForm(BaseModel):
     access_control: Optional[dict] = None
     foundational_model: Optional[str] = None
     image_url: Optional[str] = None
-    trust_tier: str = "public"
+    trust_tier: Literal["public", "authenticated", "privileged"] = "public"
     required_role: Optional[str] = None
 
 
@@ -106,7 +106,7 @@ class UpdateRegistryAgentForm(BaseModel):
     description: Optional[str] = None
     image_url: Optional[str] = None
     is_featured: Optional[bool] = None  # admin-only field; enforced in the router
-    trust_tier: Optional[str] = None
+    trust_tier: Optional[Literal["public", "authenticated", "privileged"]] = None
     required_role: Optional[str] = None
 
 
