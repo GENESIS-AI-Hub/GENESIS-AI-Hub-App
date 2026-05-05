@@ -29,6 +29,42 @@
 	let filteredAgents: RegistryAgent[] = [];
 	let searchValue = '';
 
+	let localAgents = [];
+
+	const fetchLocalAgents = async () => {
+		try {
+			const res = await fetch(`${WEBUI_BASE_URL}/api/v1/agents/`, {
+				headers: { 'Authorization': `Bearer ${localStorage.token}` }
+			});
+			if (res.ok) {
+				localAgents = await res.json();
+			} else {
+				toast.error('Failed to fetch local agents');
+			}
+		} catch (e) {
+			toast.error('Failed to fetch local agents');
+		}
+	};
+
+	const deleteLocalAgent = async (id) => {
+		try {
+			const res = await fetch(`${WEBUI_BASE_URL}/api/v1/agents/${id}`, {
+				method: 'DELETE',
+				headers: { 'Authorization': `Bearer ${localStorage.token}` }
+			});
+			if (res.ok) {
+				toast.success('Agent deleted');
+				models.set(await getModels(localStorage.token));
+				await fetchLocalAgents();
+			} else {
+				toast.error('Failed to delete agent');
+			}
+		} catch (e) {
+			toast.error('Failed to delete agent');
+		}
+	};
+
+
 	let showAddModal = false;
 	let addUrl = '';
 	let addImageUrl = '';
@@ -43,12 +79,13 @@
 	const isOwnerOrAdmin = (agent: RegistryAgent): boolean =>
 		$user?.role === 'admin' || agent.user_id === $user?.id;
 
-	const refreshAgents = async () => {
+		const refreshAgents = async () => {
 		const token = localStorage.token as string;
 		[agents, featuredAgents] = await Promise.all([
 			getRegistryAgents(token),
 			getFeaturedAgents(token)
 		]);
+		await fetchLocalAgents();
 	};
 
 	const handleAddAgent = async () => {
@@ -392,6 +429,90 @@
 		</div>
 	{/if}
 
+
+	{#if localAgents.length > 0}
+		<div class="mb-6 mt-6">
+			<div class="flex items-center gap-2 mb-3">
+				<h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+					{$i18n.t('Installed Agents')}
+				</h2>
+			</div>
+			<div class="gap-2 grid lg:grid-cols-2 xl:grid-cols-3">
+				{#each localAgents as agent}
+					<div
+						class="flex flex-col w-full px-3 py-2 dark:bg-white/5 bg-black/5 rounded-xl transition border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+					>
+						<div class="flex gap-4 mt-0.5 mb-0.5">
+							<div class="w-[44px] shrink-0">
+								<div class="rounded-full object-cover">
+									<img
+										src={agent.profile_image_url ?? agent.image_url ?? '/static/favicon.png'}
+										alt="agent profile"
+										class="rounded-full w-full h-auto object-cover"
+										on:error={(e) => {
+											if (e.target instanceof HTMLImageElement) e.target.src = '/static/favicon.png';
+										}}
+									/>
+								</div>
+							</div>
+
+							<div class=" flex flex-col flex-1 min-w-0">
+								<div class="flex justify-between items-start">
+									<div class="font-semibold line-clamp-1 break-all" title={agent.name}>{agent.name}</div>
+									
+									<!-- Actions -->
+									<div class="flex items-center gap-1">
+										{#if $user?.role === 'admin' || agent.user_id === $user?.id}
+											<Tooltip content={$i18n.t('Delete')}>
+												<button
+													class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 transition"
+													on:click={() => deleteLocalAgent(agent.id)}
+												>
+													<GarbageBin className="size-4" />
+												</button>
+											</Tooltip>
+										{/if}
+									</div>
+								</div>
+
+								<div class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mt-1" title={agent.description}>
+									{agent.description || $i18n.t('No description')}
+								</div>
+								
+								<div class="mt-2 flex flex-wrap gap-1">
+									{#if agent.model || agent.foundational_model}
+										<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+											{agent.model ?? agent.foundational_model}
+										</span>
+									{/if}
+									{#if agent.deployment_mode}
+										<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+											{agent.deployment_mode}
+										</span>
+									{/if}
+									{#if agent.capabilities}
+										{#each Object.keys(agent.capabilities) as cap}
+											<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+												{cap}
+											</span>
+										{/each}
+									{/if}
+								</div>
+							</div>
+						</div>
+						
+						<div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800 flex justify-between items-center text-xs text-gray-500">
+							<div class="truncate max-w-[260px]" title={agent.endpoint ?? agent.url}>{agent.endpoint ?? agent.url}</div>
+						</div>
+					</div>
+				{/each}
+			</div>
+			<div class="mt-4 mb-2 w-full h-px bg-gray-100 dark:bg-gray-800" />
+		</div>
+	{/if}
+
+
+	<div class="flex items-center gap-2 mb-3"><h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">{$i18n.t('Registry Agents')}</h2></div>
 	<!-- All Agents Grid -->
 	<div class="my-2 mb-5 gap-2 grid lg:grid-cols-2 xl:grid-cols-3" id="agent-list">
 		{#each filteredAgents as agent}
