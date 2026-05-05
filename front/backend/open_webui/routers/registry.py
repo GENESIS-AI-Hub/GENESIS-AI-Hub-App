@@ -24,8 +24,19 @@ router = APIRouter()
 
 @router.get("/", response_model=List[RegistryAgentModel])
 async def get_registry_agents(user=Depends(get_verified_user)):
-    """Get all registry agents visible to the user"""
+    """Get all registry agents visible to the requesting user."""
     return RegistryAgents.get_agents_by_user_id(user.id, permission="read")
+
+
+############################
+# Get Featured Agents
+############################
+
+
+@router.get("/featured", response_model=List[RegistryAgentModel])
+async def get_featured_agents(user=Depends(get_verified_user)):
+    """Get all publicly featured agents (admin-curated showcase)."""
+    return RegistryAgents.get_featured_agents()
 
 
 ############################
@@ -38,7 +49,7 @@ async def submit_registry_agent(
     form_data: SubmitRegistryAgentForm,
     user=Depends(get_verified_user),
 ):
-    """Submit a new agent to the registry by URL"""
+    """Submit a new agent to the registry by URL."""
     agent_url = form_data.url
 
     if not agent_url:
@@ -47,39 +58,32 @@ async def submit_registry_agent(
             detail="Agent URL is required",
         )
 
-    # Ensure the URL has proper scheme
     if not agent_url.startswith(("http://", "https://")):
         agent_url = "https://" + agent_url
 
-    # Parse the URL and normalize it to just the domain for the well-known file
     parsed_url = urlparse(agent_url)
     base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
-    well_known_url = f"{base_url}/.well-known/agent.json"
+    if "/.well-known/" in agent_url:
+        well_known_url = agent_url
+    else:
+        well_known_url = f"{base_url}/.well-known/agent.json"
 
     try:
         response = requests.get(well_known_url, timeout=10)
         response.raise_for_status()
         agent_data = response.json()
 
-        # Extract information from well-known format
         name = agent_data.get("name", "Unknown Agent")
         description = agent_data.get("description", "")
-        # Use the URL from the JSON if available, otherwise the base URL
-        url = agent_data.get("url", base_url)
-        
-        # Use provided image_url or fallback to JSON
+        url = agent_data.get("url") or base_url
         image_url = form_data.image_url or agent_data.get("image_url")
-        
-        # Extract tools/capabilities summary
         tools = {
             "capabilities": agent_data.get("capabilities", {}),
             "skills": agent_data.get("skills", []),
         }
 
-        # Generate new ID for the registry entry
         id = str(uuid.uuid4())
 
-        # Create registry entry
         agent = RegistryAgents.insert_new_agent(
             id=id,
             user_id=user.id,
@@ -90,6 +94,7 @@ async def submit_registry_agent(
             foundational_model=form_data.foundational_model,
             tools=tools,
             access_control=form_data.access_control,
+            card_url=well_known_url,
         )
 
         if agent:
@@ -122,7 +127,7 @@ async def update_registry_agent(
     form_data: UpdateRegistryAgentForm,
     user=Depends(get_verified_user),
 ):
-    """Update a registry agent"""
+    """Update a registry agent. Only the owner or an admin may update. is_featured is admin-only."""
     agent = RegistryAgents.get_agent_by_id(id)
     if not agent:
         raise HTTPException(
@@ -130,7 +135,6 @@ async def update_registry_agent(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    # Check permissions (Owner or Admin)
     if user.role != "admin" and agent.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -138,11 +142,18 @@ async def update_registry_agent(
         )
 
     updated_data = form_data.model_dump(exclude_unset=True)
-    
+
+    # Only admins may change the featured flag.
+    if "is_featured" in updated_data and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can feature or unfeature agents.",
+        )
+
     updated_agent = RegistryAgents.update_agent_by_id(id, updated_data)
     if updated_agent:
         return updated_agent
-    
+
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=ERROR_MESSAGES.DEFAULT(),
@@ -159,7 +170,7 @@ async def delete_registry_agent(
     id: str,
     user=Depends(get_verified_user),
 ):
-    """Delete a registry agent"""
+    """Delete a registry agent. Only the owner or an admin may delete."""
     agent = RegistryAgents.get_agent_by_id(id)
     if not agent:
         raise HTTPException(
@@ -167,7 +178,6 @@ async def delete_registry_agent(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    # Check permissions (Owner or Admin)
     if user.role != "admin" and agent.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -177,7 +187,7 @@ async def delete_registry_agent(
     result = RegistryAgents.delete_agent_by_id(id)
     if result:
         return {"success": True}
-    
+
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=ERROR_MESSAGES.DEFAULT(),
