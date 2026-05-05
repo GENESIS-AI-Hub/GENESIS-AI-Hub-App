@@ -191,6 +191,10 @@
 		await refreshAgents();
 		loaded = true;
 	});
+
+	function onImageError(e: Event) {
+		(e.target as HTMLImageElement).src = '/static/favicon.png';
+	}
 </script>
 
 <svelte:head>
@@ -601,9 +605,7 @@
 								src={agent.image_url ?? '/static/favicon.png'}
 								alt="agent profile"
 								class="rounded-full w-full h-auto object-cover"
-								on:error={(e) => {
-									if (e.target instanceof HTMLImageElement) e.target.src = '/static/favicon.png';
-								}}
+								on:error={onImageError}
 							/>
 						</div>
 					</div>

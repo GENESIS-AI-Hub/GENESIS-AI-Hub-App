@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+import logging
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import BigInteger, Column, String, Text, JSON, Boolean, text
