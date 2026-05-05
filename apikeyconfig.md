@@ -19,10 +19,11 @@ Each provider runs as a standalone A2A agent server. Keys go into each agent's o
 ANTHROPIC_API_KEY='sk-ant-YOUR_KEY_HERE'
 ```
 
-### 3. Start the Agent Server
+### 3. Install dependencies and start the agent server
 ```bash
 cd agents/claude-agent
-conda run -n open-webui python agent.py
+pip install -r requirements.txt
+python agent.py
 ```
 The server runs on **port 8002**.
 
@@ -47,10 +48,11 @@ Default: `claude-sonnet-4-6`. Also supported: `claude-opus-4-6`, `claude-haiku-4
 CHATGPT_API_KEY='sk-YOUR_KEY_HERE'
 ```
 
-### 3. Start the Agent Server
+### 3. Install dependencies and start the agent server
 ```bash
 cd agents/chatgpt-agent
-conda run -n open-webui python agent.py
+pip install -r requirements.txt
+python agent.py
 ```
 The server runs on **port 8003**.
 
@@ -58,7 +60,7 @@ The server runs on **port 8003**.
 Go to **Workspace > Agents** → click **+** → enter `http://localhost:8003` → click **Add**.
 
 ### Available Models
-Default: `gpt-4o`. Also supported: `gpt-4o-mini`, `gpt-5.2`, `gpt-5.2-chat-latest`, `gpt-5.2-pro`.
+Default: `gpt-4o`. Also supported: `gpt-4o-mini`, `gpt-4-turbo`, `o1`, `o3-mini`.
 
 ---
 
@@ -75,10 +77,11 @@ Default: `gpt-4o`. Also supported: `gpt-4o-mini`, `gpt-5.2`, `gpt-5.2-chat-lates
 GEMINI_API_KEY='AIza-YOUR_KEY_HERE'
 ```
 
-### 3. Start the Agent Server
+### 3. Install dependencies and start the agent server
 ```bash
 cd agents/gemini-agent
-conda run -n open-webui python agent.py
+pip install -r requirements.txt
+python agent.py
 ```
 The server runs on **port 8004**.
 

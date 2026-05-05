@@ -12,8 +12,10 @@
 	const dispatch = createEventDispatcher();
 
 	import { createNewFeedback, getFeedbackById, updateFeedbackById } from '$lib/apis/evaluations';
-	import { getChatById } from '$lib/apis/chats';
+	import { getChatById, createNewChat } from '$lib/apis/chats';
 	import { generateTags } from '$lib/apis';
+	import { goto } from '$app/navigation';
+	import { v4 as uuidv4 } from 'uuid';
 
 	import { config, models, settings, temporaryChatEnabled, TTSWorker, user } from '$lib/stores';
 	import { synthesizeOpenAISpeech } from '$lib/apis/audio';
@@ -98,6 +100,7 @@
 			usage?: unknown;
 		};
 		annotation?: { type: string; rating: number };
+		chrisMetadata?: { routed_to: string; agent_name: string };
 	}
 
 	export let chatId = '';
@@ -553,6 +556,42 @@
 			await tick();
 		})();
 	}
+
+	const openAgentChat = async (agentId: string, agentName: string) => {
+		const messages = createMessagesList(history, messageId);
+		const newHistory: Record<string, any> = { messages: {}, currentId: null };
+		let parentId: string | null = null;
+
+		for (const msg of messages) {
+			const msgId = uuidv4();
+			newHistory.messages[msgId] = {
+				id: msgId,
+				role: msg.role,
+				content: msg.content,
+				parentId,
+				childrenIds: [],
+				timestamp: msg.timestamp ?? Math.floor(Date.now() / 1000)
+			};
+			if (parentId) {
+				newHistory.messages[parentId].childrenIds.push(msgId);
+			}
+			parentId = msgId;
+			newHistory.currentId = msgId;
+		}
+
+		const chat = await createNewChat(localStorage.token, {
+			title: `Chat with ${agentName}`,
+			models: [`agent:${agentId}`],
+			history: newHistory,
+			messages,
+			tags: [],
+			params: {}
+		});
+
+		if (chat?.id) {
+			goto(`/c/${chat.id}`);
+		}
+	};
 
 	onMount(async () => {
 		// console.log('ResponseMessage mounted');
@@ -1420,6 +1459,23 @@
 							{/if}
 						{/if}
 					</div>
+
+					{#if message.done && message.chrisMetadata?.routed_to}
+						<div class="mt-2 mb-1">
+							<button
+								class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-orange-300 dark:border-orange-600 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition font-medium"
+								on:click={() => openAgentChat(message.chrisMetadata.routed_to, message.chrisMetadata.agent_name)}
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" />
+								</svg>
+								Open chat with {message.chrisMetadata.agent_name}
+								<svg xmlns="http://www.w3.org/2000/svg" class="size-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+								</svg>
+							</button>
+						</div>
+					{/if}
 
 					{#if message.done && showRateComment}
 						<RateComment

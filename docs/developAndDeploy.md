@@ -17,8 +17,9 @@ Direct commits to the `main` branch are restricted. All new features, bug fixes,
 ## 2. Make Changes & Test Locally
 Develop your changes using the local environment setup. Ensure both the backend and frontend function correctly before committing.
 
-* **Backend:** Navigate to `back/`, ensure `ruff check .` passes, and run `uvicorn main:app --reload`.
-* **Frontend:** Navigate to `front/` and follow the local dev instructions in `front/README.md`.
+* **Production backend (`front/backend/`):** Run `bash backend/dev.sh` from `front/` (port 8080). This is where all new feature work goes.
+* **Prototype backend (`back/`):** Navigate to `back/`, ensure `ruff check .` passes, and run `uvicorn main:app --reload`. Use only for quick prototyping — see [CLAUDE.md](../CLAUDE.md) for the distinction.
+* **Frontend:** Navigate to `front/` and run `npm run dev` (port 5173).
 
 ## 3. Commit and Push Branch
 Keep your commits granular and ensure your commit messages clearly describe the changes made.
@@ -42,7 +43,7 @@ Navigate to the GitHub repository and open a Pull Request to merge your feature 
 ## 5. Merge to Main
 Once the PR has been reviewed and approved:
 
-1. Select **"Squash and Merge"** (recommended to keep the commit history clean) or perform a standard merge.
+1. Select **"Create a merge commit"** (default — preserves individual commit history). Use squash only for very small/noisy PRs where the granular history adds no value.
 2. Delete your feature branch to keep the repository tidy.
 
 ---

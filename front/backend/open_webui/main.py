@@ -81,6 +81,7 @@ from open_webui.routers import (
     registry,
     tickets,
     embed,
+    chris,
 )
 
 from open_webui.routers.retrieval import (
@@ -414,8 +415,9 @@ class SPAStaticFiles(StaticFiles):
                 raise ex
 
 
-print(
-    rf"""
+try:
+    print(
+        rf"""
  ██████╗ ██████╗ ███████╗███╗   ██╗    ██╗    ██╗███████╗██████╗ ██╗   ██╗██╗
 ██╔═══██╗██╔══██╗██╔════╝████╗  ██║    ██║    ██║██╔════╝██╔══██╗██║   ██║██║
 ██║   ██║██████╔╝█████╗  ██╔██╗ ██║    ██║ █╗ ██║█████╗  ██████╔╝██║   ██║██║
@@ -428,7 +430,48 @@ v{VERSION} - building the best open-source AI user interface.
 {f"Commit: {WEBUI_BUILD_HASH}" if WEBUI_BUILD_HASH != "dev-build" else ""}
 https://github.com/open-webui/open-webui
 """
-)
+    )
+except UnicodeEncodeError:
+    print(f"Open WebUI v{VERSION} - building the best open-source AI user interface.")
+
+
+def _seed_chris_agent() -> None:
+    """Ensure the Chris system agent row exists in the database (idempotent)."""
+    from open_webui.models.agents import Agents
+
+    existing = Agents.get_agent_by_id("chris")
+    if existing:
+        return
+
+    Agents.insert_new_agent(
+        id="chris",
+        name="Chris",
+        description=(
+            "OpenBeavs orchestrator. Routes your queries to installed agents "
+            "and answers directly when no agent matches."
+        ),
+        url=None,
+        version="1.0.0",
+        capabilities={"streaming": True},
+        skills=[
+            {
+                "id": "route",
+                "name": "Route Query",
+                "description": "Classify a user query and delegate to the best installed agent.",
+                "tags": ["orchestration", "routing"],
+            }
+        ],
+        profile_image_url="/static/favicon.png",
+        user_id="system",
+    )
+    log.info("Chris system agent seeded.")
+
+    # Set Chris as the default model if no default is already configured
+    from open_webui.config import DEFAULT_MODELS
+    if not DEFAULT_MODELS.value:
+        DEFAULT_MODELS.value = "agent:chris"
+        DEFAULT_MODELS.save()
+        log.info("Default model set to agent:chris.")
 
 
 @asynccontextmanager
@@ -439,6 +482,8 @@ async def lifespan(app: FastAPI):
 
     if LICENSE_KEY:
         get_license_data(app, LICENSE_KEY)
+
+    _seed_chris_agent()
 
     asyncio.create_task(periodic_usage_pool_cleanup())
     yield
@@ -987,6 +1032,7 @@ app.include_router(groups.router, prefix="/api/v1/groups", tags=["groups"])
 app.include_router(files.router, prefix="/api/v1/files", tags=["files"])
 app.include_router(functions.router, prefix="/api/v1/functions", tags=["functions"])
 app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
+app.include_router(chris.router, prefix="/api/v1/chris", tags=["chris"])
 app.include_router(
     evaluations.router, prefix="/api/v1/evaluations", tags=["evaluations"]
 )

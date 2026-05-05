@@ -27,7 +27,14 @@ print(BASE_DIR)
 try:
     from dotenv import find_dotenv, load_dotenv
 
-    load_dotenv(find_dotenv(str(BASE_DIR / ".env")))
+    # Load front/.env explicitly if it exists
+    _front_env = BASE_DIR / ".env"
+    if _front_env.exists():
+        load_dotenv(str(_front_env))
+
+    # Also search upward from this file's directory so that
+    # GENESIS-AI-Hub/.env (project root) is always picked up too.
+    load_dotenv(find_dotenv(), override=False)
 except ImportError:
     print("dotenv not installed, skipping...")
 

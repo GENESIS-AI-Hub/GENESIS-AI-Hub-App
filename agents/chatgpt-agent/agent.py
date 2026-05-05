@@ -23,7 +23,7 @@ app.add_middleware(
 
 AGENT_CARD = {
     "name": "ChatGPT",
-    "description": "OpenAI ChatGPT — available models: gpt-4o, gpt-4o-mini, gpt-5.2, gpt-5.2-chat-latest, gpt-5.2-pro",
+    "description": "OpenAI ChatGPT — available models: gpt-4o, gpt-4o-mini, gpt-4-turbo, o1, o3-mini",
     "version": "1.0.0",
     "url": os.environ.get("AGENT_URL", "http://localhost:8003"),
     "capabilities": {"streaming": False},

@@ -60,6 +60,105 @@ log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MAIN"])
 
 
+async def _generate_chris_chat_completion(
+    form_data: dict,
+) -> Any:
+    """Handle chat completion for the Chris orchestrator agent internally (no HTTP hop)."""
+    from open_webui.routers.chris import (
+        chris_message,
+        ChrisMessageForm,
+        HistoryMessage,
+    )
+    from open_webui.models.users import Users
+
+    messages = form_data.get("messages", [])
+    if not messages:
+        raise Exception("No messages provided")
+
+    user_text = messages[-1].get("content", "")
+    history = [
+        HistoryMessage(role=m["role"], content=m.get("content") or "")
+        for m in messages[:-1]
+        if m.get("content")
+    ]
+
+    # Build a minimal fake user object for the router (auth already verified upstream)
+    class _FakeUser:
+        id = "system"
+        role = "admin"
+
+    result = await chris_message(
+        form_data=ChrisMessageForm(message=user_text, history=history),
+        user=_FakeUser(),
+    )
+
+    agent_response = result.response or ""
+    chris_metadata = None
+
+    if result.routed_to and result.agent_name:
+        # Announce routing, then show agent's reply
+        routing_prefix = f"*Got it, routing to **{result.agent_name}**...*\n\n"
+        response_text = routing_prefix + agent_response
+        chris_metadata = {
+            "routed_to": result.routed_to,
+            "agent_name": result.agent_name,
+        }
+    else:
+        response_text = agent_response
+
+    if form_data.get("stream"):
+        async def _stream():
+            chunk_id = f"chatcmpl-{uuid.uuid4()}"
+            words = response_text.split(" ")
+            for i, word in enumerate(words):
+                chunk = {
+                    "id": chunk_id,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": form_data.get("model"),
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": word + (" " if i < len(words) - 1 else "")},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
+                await asyncio.sleep(0.01)
+            # Final chunk — carry chris_metadata so the frontend can surface the
+            # "Open chat with [agent]" button. The middleware forwards this dict
+            # as-is when choices[0].delta has no content.
+            final = {
+                "id": chunk_id,
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": form_data.get("model"),
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                **({"chris_metadata": chris_metadata} if chris_metadata else {}),
+            }
+            yield f"data: {json.dumps(final)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(_stream(), media_type="text/event-stream")
+
+    return {
+        "id": f"chatcmpl-{uuid.uuid4()}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": form_data.get("model"),
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": response_text},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        **({"chris_metadata": chris_metadata} if chris_metadata else {}),
+    }
+
+
 def _openai_chat_envelope(model_id: str, response_text: str) -> dict:
     return {
         "id": f"chatcmpl-{uuid.uuid4()}",
@@ -145,8 +244,6 @@ async def generate_internal_agent_chat_completion(
     model_id = form_data.get("model")
     if form_data.get("stream"):
         return _openai_stream_response(model_id, reply)
-    return _openai_chat_envelope(model_id, reply)
-
 
 async def generate_a2a_agent_chat_completion(
     request: Request,
@@ -161,6 +258,11 @@ async def generate_a2a_agent_chat_completion(
 
     # Extract agent information
     agent_info = model.get("agent", {})
+
+    # ── Chris special case: handled internally, no external HTTP call ──────────
+    if agent_info.get("id") == "chris":
+        return await _generate_chris_chat_completion(form_data)
+
     agent_endpoint = agent_info.get("endpoint")
 
     if not agent_endpoint:

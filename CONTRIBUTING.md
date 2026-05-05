@@ -134,7 +134,39 @@ For linting and formatting:
 ---
 
 ## Testing
-@Nam Long Tran
+
+All new API routes require unit tests. All PRs must pass every test before merge.
+
+### Backend
+
+```bash
+# Prototype backend (back/)
+cd back/
+pytest tests/ -v
+
+# Production backend (front/backend/)
+cd front/
+pytest backend/open_webui/test/ -v
+```
+
+### Frontend
+
+```bash
+cd front/
+npm run test:frontend   # Vitest unit tests
+npm run cy:open         # Cypress E2E tests (interactive browser)
+```
+
+### What to Test
+
+| Layer | Test Type | Tool | Location |
+| :--- | :--- | :--- | :--- |
+| Prototype backend | Unit | pytest | `back/tests/` |
+| Production backend | Unit | pytest | `front/backend/open_webui/test/` |
+| Frontend components | Unit | Vitest | `front/test/` |
+| Full user flows | E2E | Cypress | `front/cypress/` |
+
+Run `npm run lint` and all relevant tests locally before opening a PR. The CI pipeline will block merges on any failure.
 
 ---
 
