@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { createEventDispatcher } from 'svelte';
+	import { goto } from '$app/navigation';
 
 	// 'tier_required' → user needs to log in
 	// 'step_up_required' → authenticated user needs elevated verification
@@ -58,7 +59,7 @@
 				<button
 					class="px-4 py-2 rounded-lg text-sm font-medium text-white transition"
 					style="background: #DC4405;"
-					on:click={() => dispatch('close')}
+					on:click={() => { dispatch('close'); goto('/auth'); }}
 				>
 					Sign in with OSU
 				</button>

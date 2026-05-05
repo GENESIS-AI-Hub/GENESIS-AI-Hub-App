@@ -30,6 +30,7 @@
 	let profileImageUrl = '';
 	let publishToRegistry = true;
 	let deployToCloudRun = false;
+	let trustTier: 'public' | 'authenticated' | 'privileged' = 'public';
 
 	let modelTouched = false;
 
@@ -52,7 +53,8 @@
 			model: model || undefined,
 			profile_image_url: profileImageUrl.trim() || undefined,
 			publish_to_registry: publishToRegistry,
-			deploy_to_cloud_run: deployToCloudRun
+			deploy_to_cloud_run: deployToCloudRun,
+			trust_tier: trustTier
 		};
 
 		try {
@@ -150,6 +152,18 @@
 						class="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
 					/>
 				</div>
+			</div>
+
+			<div>
+				<label class="block text-sm font-medium mb-1">{$i18n.t('Access Tier')}</label>
+				<select
+					bind:value={trustTier}
+					class="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+				>
+					<option value="public">🌐 {$i18n.t('Public')} — {$i18n.t('anyone can use')}</option>
+					<option value="authenticated">🎓 {$i18n.t('Authenticated')} — {$i18n.t('OSU login required')}</option>
+					<option value="privileged">🔒 {$i18n.t('Privileged')} — {$i18n.t('admin access only')}</option>
+				</select>
 			</div>
 
 			<div>
