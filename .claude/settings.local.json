@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker info *)",
+      "Bash(docker build *)",
+      "Bash(tee /tmp/openbeavs-build.log)",
+      "Bash(docker run *)",
+      "Bash(tee /tmp/openbeavs-run.log)",
+      "Bash(curl -s -o /dev/null -w 'HTTP %{http_code} \\(%{size_download} bytes\\)\\\\n' http://localhost:8080/)",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' http://localhost:8080/health)",
+      "Bash(curl -s -o /dev/null -w 'HTTP %{http_code}\\\\n' http://localhost:8080/docs)",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' http://localhost:8080/.well-known/agent.json)",
+      "Bash(curl -s http://localhost:8080/openapi.json)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f'{len\\(d.get\\(\\\\\"paths\\\\\",{}\\)\\)} paths, title={d.get\\(\\\\\"info\\\\\",{}\\).get\\(\\\\\"title\\\\\"\\)}'\\)\")",
+      "Bash(python -m pytest backend/open_webui/test/security/ -v --collect-only)",
+      "Bash(python3 -c \"import pytest; print\\(pytest.__version__\\)\")",
+      "Bash(command -v docker)",
+      "Read(//usr/bin/**)",
+      "Bash(docker.exe ps *)",
+      "Bash(python3 *)"
+    ]
+  }
+}

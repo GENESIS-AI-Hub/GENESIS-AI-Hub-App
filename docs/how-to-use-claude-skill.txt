@@ -1,0 +1,36 @@
+How to use the skill
+
+  1. One-time setup per shell session. Export the two env vars before launching Claude Code (or run them in the Claude session via ! prefix):
+
+  export OPENBEAVS_BASE_URL="current-url-that-googlecloud-deploy-in"
+
+  export OPENBEAVS_ADMIN_TOKEN=$(curl -s -X POST \
+    "$OPENBEAVS_BASE_URL/api/v1/auths/signin" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"admin@gmail.com","password":"1234"}' | jq -r .token)
+  # That is the default login for admin, replace if you want to.
+
+  2. Then just ask in plain English. Claude Code matches your prompt against the skill's description and auto-loads SKILL.md when it sees triggers like:
+
+  - "list every agent on the deployed hub"
+  - "deploy an agent named WeatherBot with this system prompt..."
+  - "promote kimminsu@oregonstate.edu to admin"
+  - "mint a CI bearer token"
+  - "delete agent "
+  - "health-check the hub"
+  - "register https://my-agent.example.com as an A2A agent"
+
+  No slash command, no /skill invocation needed — the description has explicit trigger phrases the harness will match.
+
+  3. If Claude doesn't seem to use the skill, nudge it directly: "use the openbeavs-admin skill to list every agent." That forces Claude to read SKILL.md before acting.
+
+  4. Sanity-check the load. Once invoked, Claude should reference the trailing-slash rule, ask for the env vars if unset, and follow the safety-confirmation rules (e.g. confirming before DELETE
+  /api/v1/models/delete/all). If you see Claude curl-probing without referencing the skill, it didn't load — re-invoke explicitly.
+
+  5. Editing the skill. It's just markdown. Edit .claude/skills/openbeavs-admin/SKILL.md directly when routes change or new operations need documenting. The first ~50 lines (frontmatter + Quick Start) are the
+  highest-leverage — that's what Claude reads when scanning whether the skill applies.
+
+  6. Cleanup after a session. unset OPENBEAVS_ADMIN_TOKEN to evict the bearer from your shell history/env. The skill will refuse to run without it on the next session, so you'll be re-prompted.
+
+  7. To share with the team. The skill lives under .claude/skills/ in the repo — committing it on a topic branch and merging makes every teammate's Claude Code session pick it up automatically when they cd
+  into the repo. No per-machine install.

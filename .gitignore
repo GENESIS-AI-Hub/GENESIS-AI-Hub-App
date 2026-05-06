@@ -39,6 +39,3 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
-# Claude
-.claude/
