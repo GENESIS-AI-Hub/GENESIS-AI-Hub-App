@@ -1,3 +1,4 @@
+import logging
 import uuid
 import requests
 from typing import Optional, List
@@ -5,6 +6,8 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+
+log = logging.getLogger(__name__)
 
 from open_webui.models.registry import (
     RegistryAgentModel,
@@ -82,6 +85,12 @@ async def submit_registry_agent(
             "skills": agent_data.get("skills", []),
         }
 
+        if RegistryAgents.get_agent_by_url(url):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An agent with this URL is already registered.",
+            )
+
         id = str(uuid.uuid4())
 
         agent = RegistryAgents.insert_new_agent(
@@ -99,11 +108,15 @@ async def submit_registry_agent(
 
         if agent:
             return agent
+
+        log.error("insert_new_agent returned None for url=%s user=%s", url, user.id)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT(),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save agent to the registry. Check server logs for details.",
         )
 
+    except HTTPException:
+        raise
     except requests.exceptions.RequestException as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
