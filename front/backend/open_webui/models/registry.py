@@ -1,11 +1,15 @@
+import logging
 import time
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import BigInteger, Column, String, Text, JSON, Boolean
 from sqlalchemy import or_, and_
+from sqlalchemy.exc import IntegrityError
 
 from open_webui.internal.db import Base, JSONField, get_db, engine
 from open_webui.utils.access_control import has_access
+
+log = logging.getLogger(__name__)
 
 ####################
 # Registry Agent DB Schema
@@ -130,8 +134,23 @@ class RegistryAgentsTable:
                 db.commit()
                 db.refresh(result)
                 return RegistryAgentModel.model_validate(result) if result else None
-            except Exception:
+            except IntegrityError as e:
+                db.rollback()
+                log.warning("registry insert failed (integrity): %s", e.orig)
                 return None
+            except Exception as e:
+                db.rollback()
+                log.exception("registry insert failed: %s", e)
+                return None
+
+    def get_agent_by_url(self, url: str) -> Optional[RegistryAgentModel]:
+        """Return the registry agent matching a given canonical URL, or None."""
+        try:
+            with get_db() as db:
+                agent = db.query(RegistryAgent).filter_by(url=url).first()
+                return RegistryAgentModel.model_validate(agent) if agent else None
+        except Exception:
+            return None
 
     def get_agent_by_id(self, id: str) -> Optional[RegistryAgentModel]:
         """Return a single registry agent by ID."""
@@ -203,7 +222,8 @@ class RegistryAgentsTable:
                 db.delete(agent)
                 db.commit()
                 return True
-        except Exception:
+        except Exception as e:
+            log.exception("registry delete failed for id=%s: %s", id, e)
             return False
 
 
