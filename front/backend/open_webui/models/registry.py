@@ -146,15 +146,18 @@ class RegistryAgentsTable:
         self, user_id: str, permission: str = "read"
     ) -> List[RegistryAgentModel]:
         """Return all registry agents visible to the given user."""
-        with get_db() as db:
-            agents = db.query(RegistryAgent).all()
+        try:
+            with get_db() as db:
+                agents = db.query(RegistryAgent).all()
 
-            return [
-                RegistryAgentModel.model_validate(agent)
-                for agent in agents
-                if agent.user_id == user_id
-                or has_access(user_id, permission, agent.access_control)
-            ]
+                return [
+                    RegistryAgentModel.model_validate(agent)
+                    for agent in agents
+                    if agent.user_id == user_id
+                    or has_access(user_id, permission, agent.access_control)
+                ]
+        except Exception:
+            return []
 
     def get_featured_agents(self) -> List[RegistryAgentModel]:
         """Return all featured agents that are publicly accessible (access_control is None)."""
