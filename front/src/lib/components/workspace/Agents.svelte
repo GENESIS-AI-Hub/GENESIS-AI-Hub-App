@@ -142,6 +142,7 @@
 			await deleteRegistryAgent(localStorage.token as string, agent.id);
 			toast.success($i18n.t('Agent removed from registry'));
 			await refreshAgents();
+			models.set(await getModels(localStorage.token as string));
 		} catch {
 			toast.error($i18n.t('Failed to delete agent'));
 		}
