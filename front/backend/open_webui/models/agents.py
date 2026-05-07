@@ -3,7 +3,7 @@ from typing import Optional, List
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import BigInteger, Column, String, Text, Boolean
 
-from open_webui.internal.db import Base, JSONField, get_db
+from open_webui.internal.db import Base, JSONField, get_db, engine
 
 ####################
 # Agent DB Schema
@@ -128,6 +128,9 @@ class DeployAgentForm(BaseModel):
 
 
 class AgentsTable:
+    def __init__(self):
+        Agent.metadata.create_all(bind=engine)
+
     def insert_new_agent(
         self,
         id: str,

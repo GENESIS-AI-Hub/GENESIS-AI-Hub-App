@@ -1114,38 +1114,8 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
 
         models.append(model)
 
-    # Add A2A agent models if enabled
-    from open_webui.models.agents import Agents
-    enable_a2a = getattr(request.app.state.config, "ENABLE_A2A_AGENTS", True)
-    if enable_a2a:
-        try:
-            agents = Agents.get_agents()
-            for agent in agents:
-                model_id = f"agent:{agent.id}"
-                agent_model = {
-                    "id": model_id,
-                    "name": agent.name,
-                    "object": "model",
-                    "created": agent.created_at,
-                    "owned_by": "a2a-agent",
-                    "agent": {
-                        "id": agent.id,
-                        "description": agent.description,
-                        "endpoint": agent.endpoint or agent.url,
-                        "capabilities": agent.capabilities,
-                        "skills": agent.skills,
-                    },
-                    "info": {
-                        "meta": {
-                            "description": agent.description,
-                            "capabilities": agent.capabilities,
-                        }
-                    },
-                    "tags": [{"name": "agent"}, {"name": "a2a"}]
-                }
-                models.append(agent_model)
-        except Exception as e:
-            log.debug(f"Error loading A2A agents: {e}")
+    # A2A agents are already included by get_all_models() via utils/models.py.
+    # Do not add them again here — that would cause each agent to appear twice.
 
     model_order_list = request.app.state.config.MODEL_ORDER_LIST
     if model_order_list:

@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import BigInteger, Column, String, Text, JSON, Boolean
 from sqlalchemy import or_, and_
 
-from open_webui.internal.db import Base, JSONField, get_db
+from open_webui.internal.db import Base, JSONField, get_db, engine
 from open_webui.utils.access_control import has_access
 
 ####################
@@ -88,6 +88,9 @@ class UpdateRegistryAgentForm(BaseModel):
 
 
 class RegistryAgentsTable:
+    def __init__(self):
+        RegistryAgent.metadata.create_all(bind=engine)
+
     def insert_new_agent(
         self,
         id: str,
