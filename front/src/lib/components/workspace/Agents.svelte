@@ -11,7 +11,8 @@
 		getFeaturedAgents,
 		submitRegistryAgent,
 		updateRegistryAgent,
-		deleteRegistryAgent
+		deleteRegistryAgent,
+		clearRegistry
 	} from '$lib/apis/registry';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -69,6 +70,24 @@
 	let addUrl = '';
 	let addImageUrl = '';
 	let addSubmitting = false;
+
+	let showClearConfirm = false;
+	let clearSubmitting = false;
+
+	const handleClearRegistry = async () => {
+		clearSubmitting = true;
+		try {
+			const { deleted } = await clearRegistry(localStorage.token as string);
+			toast.success($i18n.t('Registry cleared ({{count}} agents removed)', { count: deleted }));
+			showClearConfirm = false;
+			await refreshAgents();
+			models.set(await getModels(localStorage.token as string));
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : $i18n.t('Failed to clear registry'));
+		} finally {
+			clearSubmitting = false;
+		}
+	};
 
 	$: filteredAgents = agents.filter(
 		(a) => searchValue === '' || a.name.toLowerCase().includes(searchValue.toLowerCase())
@@ -190,6 +209,33 @@
 </svelte:head>
 
 {#if loaded}
+	<!-- Clear Registry Confirm Modal -->
+	{#if showClearConfirm}
+		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+			<div class="bg-white dark:bg-gray-900 rounded-2xl p-6 w-full max-w-sm shadow-xl">
+				<h2 class="text-lg font-semibold mb-2">{$i18n.t('Clear Registry?')}</h2>
+				<p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+					{$i18n.t('This will permanently delete every agent from the registry. This cannot be undone.')}
+				</p>
+				<div class="flex justify-end gap-2">
+					<button
+						class="px-4 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+						on:click={() => (showClearConfirm = false)}
+					>
+						{$i18n.t('Cancel')}
+					</button>
+					<button
+						class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium disabled:opacity-50"
+						disabled={clearSubmitting}
+						on:click={handleClearRegistry}
+					>
+						{clearSubmitting ? $i18n.t('Clearing...') : $i18n.t('Clear All')}
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	<!-- Add Agent Modal -->
 	{#if showAddModal}
 		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -279,6 +325,14 @@
 					>
 						{$i18n.t('Deploy new agent')}
 					</a>
+					<Tooltip content={$i18n.t('Clear all registry agents')}>
+						<button
+							class="px-2 py-2 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 transition text-xs font-medium"
+							on:click={() => (showClearConfirm = true)}
+						>
+							{$i18n.t('Clear Registry')}
+						</button>
+					</Tooltip>
 				{/if}
 				<button
 					class="px-2 py-2 rounded-xl hover:bg-gray-700/10 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition font-medium text-sm flex items-center space-x-1"

@@ -174,6 +174,18 @@ async def update_registry_agent(
 
 
 ############################
+# Purge All Registry Agents (admin)
+############################
+
+
+@router.delete("/")
+async def purge_registry_agents(user=Depends(get_admin_user)):
+    """Admin-only: delete every entry from the registry."""
+    count = RegistryAgents.delete_all_agents()
+    return {"success": True, "deleted": count}
+
+
+############################
 # Delete Registry Agent
 ############################
 

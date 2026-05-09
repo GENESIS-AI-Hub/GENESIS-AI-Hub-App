@@ -1,8 +1,9 @@
+import json
 import logging
 import time
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import BigInteger, Column, String, Text, JSON, Boolean
+from pydantic import BaseModel, ConfigDict, field_validator
+from sqlalchemy import BigInteger, Column, String, Text, Boolean
 from sqlalchemy import or_, and_
 from sqlalchemy.exc import IntegrityError
 
@@ -32,7 +33,7 @@ class RegistryAgent(Base):
     tools = Column(JSONField, nullable=True)  # Summary of capabilities/skills
 
     # Access Control
-    access_control = Column(JSON, nullable=True)
+    access_control = Column(JSONField, nullable=True)
     # - `None`: Public access (visible to all users)
     # - `{}`: Private access (owner only)
     # - Custom permissions: {"read": {"group_ids": [...]}, "write": ...}
@@ -64,6 +65,17 @@ class RegistryAgentModel(BaseModel):
     updated_at: int
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("access_control", "tools", mode="before")
+    @classmethod
+    def _coerce_json_str(cls, v):
+        """Tolerate legacy rows where JSON columns were stored as plain strings."""
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (ValueError, TypeError):
+                return None
+        return v
 
 
 ####################
@@ -168,13 +180,16 @@ class RegistryAgentsTable:
         try:
             with get_db() as db:
                 agents = db.query(RegistryAgent).all()
-
-                return [
-                    RegistryAgentModel.model_validate(agent)
-                    for agent in agents
-                    if agent.user_id == user_id
-                    or has_access(user_id, permission, agent.access_control)
-                ]
+                result = []
+                for agent in agents:
+                    try:
+                        model = RegistryAgentModel.model_validate(agent)
+                    except Exception as e:
+                        log.warning("skipping malformed registry agent id=%s: %s", agent.id, e)
+                        continue
+                    if agent.user_id == user_id or has_access(user_id, permission, model.access_control):
+                        result.append(model)
+                return result
         except Exception:
             return []
 
@@ -225,6 +240,17 @@ class RegistryAgentsTable:
         except Exception as e:
             log.exception("registry delete failed for id=%s: %s", id, e)
             return False
+
+    def delete_all_agents(self) -> int:
+        """Hard-delete every registry agent. Returns number of rows removed."""
+        try:
+            with get_db() as db:
+                count = db.query(RegistryAgent).delete()
+                db.commit()
+                return count
+        except Exception as e:
+            log.exception("registry purge failed: %s", e)
+            return 0
 
 
 RegistryAgents = RegistryAgentsTable()

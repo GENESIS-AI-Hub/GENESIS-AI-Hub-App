@@ -78,6 +78,78 @@ async def get_all_agents(user=Depends(get_admin_user)):
 
 
 ############################
+# FetchWellKnown
+############################
+
+
+@router.get("/fetch-well-known")
+async def fetch_agent_well_known(agent_url: str, user=Depends(get_verified_user)):
+    """Fetch an agent's .well-known/agent.json file without registering"""
+    if not agent_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent URL is required",
+        )
+
+    if not agent_url.startswith(("http://", "https://")):
+        agent_url = "https://" + agent_url
+
+    parsed_url = urlparse(agent_url)
+    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    if "/.well-known/" in agent_url:
+        well_known_url = agent_url
+    else:
+        well_known_url = f"{base_url}/.well-known/agent.json"
+
+    try:
+        response = requests.get(well_known_url, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error fetching agent's .well-known/agent.json: {str(e)}",
+        )
+
+
+############################
+# GetAgentsAsModels
+############################
+
+
+@router.get("/models")
+async def get_agents_as_models(user=Depends(get_verified_user)):
+    """Get all active agents formatted as models for the chat interface"""
+    agents = Agents.get_agents()
+
+    agent_models = []
+    for agent in agents:
+        model_id = f"agent:{agent.id}"
+        agent_models.append({
+            "id": model_id,
+            "name": agent.name,
+            "object": "model",
+            "created": agent.created_at,
+            "owned_by": "a2a-agent",
+            "agent": {
+                "id": agent.id,
+                "description": agent.description,
+                "endpoint": agent.endpoint or agent.url,
+                "capabilities": agent.capabilities,
+                "skills": agent.skills,
+            },
+            "info": {
+                "meta": {
+                    "description": agent.description,
+                    "capabilities": agent.capabilities,
+                }
+            }
+        })
+
+    return {"data": agent_models}
+
+
+############################
 # GetAgentById
 ############################
 
@@ -216,6 +288,8 @@ async def register_agent_by_url(
             detail=ERROR_MESSAGES.DEFAULT(),
         )
         
+    except HTTPException:
+        raise
     except requests.exceptions.RequestException as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -225,43 +299,6 @@ async def register_agent_by_url(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid JSON response from agent: {str(e)}",
-        )
-
-
-############################
-# FetchWellKnown
-############################
-
-
-@router.get("/fetch-well-known")
-async def fetch_agent_well_known(agent_url: str, user=Depends(get_verified_user)):
-    """Fetch an agent's .well-known/agent.json file without registering"""
-    if not agent_url:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Agent URL is required",
-        )
-
-    # Ensure the URL has proper scheme
-    if not agent_url.startswith(("http://", "https://")):
-        agent_url = "https://" + agent_url
-
-    parsed_url = urlparse(agent_url)
-    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
-    if "/.well-known/" in agent_url:
-        well_known_url = agent_url
-    else:
-        well_known_url = f"{base_url}/.well-known/agent.json"
-
-    try:
-        response = requests.get(well_known_url, timeout=10)
-        response.raise_for_status()
-        agent_data = response.json()
-        return agent_data
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error fetching agent's .well-known/agent.json: {str(e)}",
         )
 
 
@@ -395,43 +432,6 @@ async def send_message_to_agent(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing agent response: {str(e)}",
         )
-
-
-############################
-# GetAgentsAsModels
-############################
-
-
-@router.get("/models")
-async def get_agents_as_models(user=Depends(get_verified_user)):
-    """Get all active agents formatted as models for the chat interface"""
-    agents = Agents.get_agents()
-
-    models = []
-    for agent in agents:
-        model_id = f"agent:{agent.id}"
-        models.append({
-            "id": model_id,
-            "name": agent.name,
-            "object": "model",
-            "created": agent.created_at,
-            "owned_by": "a2a-agent",
-            "agent": {
-                "id": agent.id,
-                "description": agent.description,
-                "endpoint": agent.endpoint or agent.url,
-                "capabilities": agent.capabilities,
-                "skills": agent.skills,
-            },
-            "info": {
-                "meta": {
-                    "description": agent.description,
-                    "capabilities": agent.capabilities,
-                }
-            }
-        })
-
-    return {"data": models}
 
 
 ############################

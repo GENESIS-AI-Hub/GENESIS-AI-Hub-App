@@ -87,3 +87,12 @@ export const deleteRegistryAgent = async (token: string, id: string): Promise<vo
 	});
 	if (!res.ok) throw new Error('Failed to delete agent');
 };
+
+export const clearRegistry = async (token: string): Promise<{ deleted: number }> => {
+	const res = await fetch(`${WEBUI_BASE_URL}/api/v1/registry/`, {
+		method: 'DELETE',
+		headers: { Authorization: `Bearer ${token}` }
+	});
+	if (!res.ok) throw new Error('Failed to clear registry');
+	return res.json();
+};
