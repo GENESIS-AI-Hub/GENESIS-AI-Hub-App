@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import BigInteger, Column, String, Text, JSON, Boolean
+from sqlalchemy import BigInteger, Column, String, Text, Boolean
 from sqlalchemy import or_, and_
 from sqlalchemy.exc import IntegrityError
 
@@ -32,7 +32,7 @@ class RegistryAgent(Base):
     tools = Column(JSONField, nullable=True)  # Summary of capabilities/skills
 
     # Access Control
-    access_control = Column(JSON, nullable=True)
+    access_control = Column(JSONField, nullable=True)
     # - `None`: Public access (visible to all users)
     # - `{}`: Private access (owner only)
     # - Custom permissions: {"read": {"group_ids": [...]}, "write": ...}

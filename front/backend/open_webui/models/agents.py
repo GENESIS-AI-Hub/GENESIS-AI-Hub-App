@@ -1,9 +1,13 @@
+import logging
 import time
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import BigInteger, Column, String, Text, Boolean
+from sqlalchemy.exc import IntegrityError
 
 from open_webui.internal.db import Base, JSONField, get_db, engine
+
+log = logging.getLogger(__name__)
 
 ####################
 # Agent DB Schema
@@ -182,11 +186,20 @@ class AgentsTable:
                 }
             )
 
-            result = Agent(**agent.model_dump())
-            db.add(result)
-            db.commit()
-            db.refresh(result)
-            return AgentModel.model_validate(result) if result else None
+            try:
+                result = Agent(**agent.model_dump())
+                db.add(result)
+                db.commit()
+                db.refresh(result)
+                return AgentModel.model_validate(result) if result else None
+            except IntegrityError as e:
+                db.rollback()
+                log.warning("agent insert failed (integrity): %s", e.orig)
+                return None
+            except Exception as e:
+                db.rollback()
+                log.exception("agent insert failed: %s", e)
+                return None
 
     def get_agent_by_id(self, id: str) -> Optional[AgentModel]:
         try:
