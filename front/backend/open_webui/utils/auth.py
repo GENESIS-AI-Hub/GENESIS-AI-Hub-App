@@ -264,3 +264,17 @@ def get_admin_user(user=Depends(get_current_user)):
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
     return user
+
+
+async def get_optional_user(
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> Optional[object]:
+    """Return the authenticated user or None. Used for endpoints accessible to
+    anonymous callers but that restrict behaviour based on auth level."""
+    try:
+        auth_header = request.headers.get("Authorization")
+        cred = get_http_authorization_cred(auth_header)
+        return get_current_user(request, background_tasks, cred)
+    except HTTPException:
+        return None

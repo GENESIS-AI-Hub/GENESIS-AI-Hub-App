@@ -38,12 +38,32 @@
 	let stepUpModal: { code: 'tier_required' | 'step_up_required'; requiredTier: string } | null =
 		null;
 
+	/** Unix timestamp (ms) until which the user holds a step-up elevated session.
+	 *  Set when the step-up OAuth popup completes successfully. */
+	let elevatedUntilMs: number | null = null;
+
+	function onElevated(evt: CustomEvent<{ token: string }>) {
+		// Token already stored in localStorage by the modal.
+		// Parse the elevated_until claim to know how long elevation lasts.
+		try {
+			const payload = JSON.parse(atob(evt.detail.token.split('.')[1]));
+			if (payload.elevated_until) {
+				elevatedUntilMs = payload.elevated_until * 1000; // convert epoch seconds → ms
+			}
+		} catch {
+			elevatedUntilMs = Date.now() + 30 * 60 * 1000; // fallback: 30 min
+		}
+	}
+
 	/** Scope the current user holds: public < authenticated < privileged */
-	$: userScope = $user?.role === 'admin'
+	$: baseScope = $user?.role === 'admin'
 		? 'privileged'
 		: $user?.role === 'user'
 			? 'authenticated'
 			: 'public';
+
+	$: userScope =
+		elevatedUntilMs && Date.now() < elevatedUntilMs ? 'privileged' : baseScope;
 
 	const TIER_ORDER: Record<string, number> = { public: 0, authenticated: 1, privileged: 2 };
 
@@ -208,6 +228,7 @@
 		code={stepUpModal.code}
 		requiredTier={stepUpModal.requiredTier}
 		on:close={() => (stepUpModal = null)}
+		on:elevated={onElevated}
 	/>
 {/if}
 

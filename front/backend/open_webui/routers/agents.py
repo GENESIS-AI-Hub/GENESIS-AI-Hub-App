@@ -1,3 +1,4 @@
+import time
 import uuid
 import json
 from typing import Optional, List, Dict, Any
@@ -6,6 +7,13 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 import requests
+
+
+def _fetch_well_known(url: str, timeout: int = 10) -> requests.Response:
+    """Fetch a URL, skipping TLS verification for localhost (mock CA in dev)."""
+    host = urlparse(url).hostname or ""
+    verify = host not in ("localhost", "127.0.0.1", "::1")
+    return requests.get(url, timeout=timeout, verify=verify)
 
 from open_webui.models.agents import (
     AgentModel,
@@ -18,8 +26,25 @@ from open_webui.models.agents import (
 )
 from open_webui.models.registry import RegistryAgents
 from open_webui.constants import ERROR_MESSAGES
-from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.auth import (
+    decode_token,
+    get_admin_user,
+    get_optional_user,
+    get_verified_user,
+)
 from open_webui.utils.a2a_runtime import PROVIDER_DEFAULTS, run_agent_turn
+
+
+def _get_elevated_until(request: Request) -> Optional[float]:
+    """Extract the elevated_until timestamp from the request's JWT, if present."""
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.removeprefix("Bearer ").strip()
+    if not token:
+        token = request.cookies.get("token", "")
+    if not token:
+        return None
+    data = decode_token(token)
+    return data.get("elevated_until") if data else None
 
 router = APIRouter()
 
@@ -27,7 +52,7 @@ router = APIRouter()
 _TIER_ORDER = {"public": 0, "authenticated": 1, "privileged": 2}
 
 
-def _get_user_scope(user) -> str:
+def _get_user_scope(user, elevated_until: Optional[float] = None) -> str:
     """Map the existing Open WebUI role to a trust tier.
 
     TODO(#141/#143): Replace this with real OSU OIDC scope claims once the
@@ -36,7 +61,16 @@ def _get_user_scope(user) -> str:
       admin   → privileged
       user    → authenticated
       pending → public
+      None    → public (unauthenticated callers on optional-auth endpoints)
+
+    Step-up elevation: if the request's JWT carries a valid elevated_until
+    timestamp (set by the step-up MFA callback), any authenticated user is
+    temporarily treated as privileged for the duration.
     """
+    if user is None:
+        return "public"
+    if elevated_until and time.time() < elevated_until:
+        return "privileged"
     if user.role == "admin":
         return "privileged"
     if user.role == "user":
@@ -44,10 +78,12 @@ def _get_user_scope(user) -> str:
     return "public"
 
 
-def _enforce_tier(agent: AgentModel, user) -> None:
+def _enforce_tier(
+    agent: AgentModel, user, elevated_until: Optional[float] = None
+) -> None:
     """Raise a structured 403 if the user's scope is below the agent's tier."""
     required = _TIER_ORDER.get(agent.trust_tier or "public", 0)
-    user_scope = _get_user_scope(user)
+    user_scope = _get_user_scope(user, elevated_until)
     available = _TIER_ORDER.get(user_scope, 0)
 
     if available >= required:
@@ -276,7 +312,7 @@ async def register_agent_by_url(
         well_known_url = f"{base_url}/.well-known/agent.json"
 
     try:
-        response = requests.get(well_known_url, timeout=10)
+        response = _fetch_well_known(well_known_url)
         response.raise_for_status()
         agent_data = response.json()
 
@@ -346,6 +382,41 @@ async def register_agent_by_url(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid JSON response from agent: {str(e)}",
+        )
+
+
+############################
+# FetchWellKnown
+############################
+
+
+@router.get("/fetch-well-known")
+async def fetch_agent_well_known(agent_url: str, user=Depends(get_verified_user)):
+    """Fetch an agent's .well-known/agent.json file without registering"""
+    if not agent_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent URL is required",
+        )
+
+    # Ensure the URL has proper scheme
+    if not agent_url.startswith(("http://", "https://")):
+        agent_url = "https://" + agent_url
+
+    # Parse the URL
+    parsed_url = urlparse(agent_url)
+    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    well_known_url = f"{base_url}/.well-known/agent.json"
+
+    try:
+        response = _fetch_well_known(well_known_url)
+        response.raise_for_status()
+        agent_data = response.json()
+        return agent_data
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error fetching agent's .well-known/agent.json: {str(e)}",
         )
 
 
@@ -424,6 +495,7 @@ async def delete_agent(agent_id: str, user=Depends(get_verified_user)):
 async def send_message_to_agent(
     agent_id: str,
     form_data: SendMessageToAgentForm,
+    request: Request,
     user=Depends(get_verified_user),
 ):
     """Send a message to an A2A agent using JSON-RPC protocol"""
@@ -434,7 +506,7 @@ async def send_message_to_agent(
             detail="Agent not found",
         )
 
-    _enforce_tier(agent, user)
+    _enforce_tier(agent, user, elevated_until=_get_elevated_until(request))
 
     if not agent.endpoint and not agent.url:
         raise HTTPException(
@@ -460,8 +532,10 @@ async def send_message_to_agent(
     }
 
     try:
-        # Send request to external agent
-        response = requests.post(endpoint, json=jsonrpc_request, timeout=30)
+        # Send request to external agent (skip TLS check for localhost dev agents)
+        _host = urlparse(endpoint).hostname or ""
+        _verify = _host not in ("localhost", "127.0.0.1", "::1")
+        response = requests.post(endpoint, json=jsonrpc_request, timeout=30, verify=_verify)
         response.raise_for_status()
 
         response_data = response.json()
@@ -682,8 +756,17 @@ async def get_internal_agent_card(request: Request, agent_id: str):
 
 
 @router.post("/{agent_id}/internal-a2a")
-async def internal_agent_jsonrpc(agent_id: str, request: Request):
-    """JSON-RPC handler for an internally-hosted agent. Public by A2A spec."""
+async def internal_agent_jsonrpc(
+    agent_id: str,
+    request: Request,
+    user=Depends(get_optional_user),
+):
+    """JSON-RPC handler for an internally-hosted agent.
+
+    Authentication is optional: public-tier agents are accessible to
+    unauthenticated callers (A2A federation). Authenticated/privileged agents
+    require a valid bearer token with sufficient scope.
+    """
     try:
         body = await request.json()
     except Exception:
@@ -701,6 +784,16 @@ async def internal_agent_jsonrpc(agent_id: str, request: Request):
         return {
             "jsonrpc": "2.0",
             "error": {"code": -32004, "message": "Agent not found"},
+            "id": req_id,
+        }
+
+    try:
+        _enforce_tier(agent, user, elevated_until=_get_elevated_until(request))
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {"message": exc.detail}
+        return {
+            "jsonrpc": "2.0",
+            "error": {"code": -32001, **detail},
             "id": req_id,
         }
 

@@ -1,7 +1,7 @@
 import logging
 import time
 from typing import Literal, Optional, List
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import BigInteger, Column, String, Text, Boolean, text
 from sqlalchemy.exc import IntegrityError
 
@@ -111,6 +111,16 @@ class RegisterAgentForm(BaseModel):
     trust_tier: Literal["public", "authenticated", "privileged"] = "public"
     required_role: Optional[str] = None
 
+    @model_validator(mode="after")
+    def _validate_tier_role_pair(self) -> "RegisterAgentForm":
+        if self.trust_tier == "public":
+            self.required_role = None
+        elif self.trust_tier == "privileged" and not self.required_role:
+            raise ValueError(
+                "required_role must be set when trust_tier is 'privileged'"
+            )
+        return self
+
 
 class RegisterAgentByUrlForm(BaseModel):
     agent_url: str
@@ -140,6 +150,16 @@ class DeployAgentForm(BaseModel):
     required_role: Optional[str] = None
 
     model_config = ConfigDict(protected_namespaces=())
+
+    @model_validator(mode="after")
+    def _validate_tier_role_pair(self) -> "DeployAgentForm":
+        if self.trust_tier == "public":
+            self.required_role = None
+        elif self.trust_tier == "privileged" and not self.required_role:
+            raise ValueError(
+                "required_role must be set when trust_tier is 'privileged'"
+            )
+        return self
 
 
 ####################

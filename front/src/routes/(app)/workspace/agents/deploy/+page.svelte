@@ -31,6 +31,7 @@
 	let publishToRegistry = true;
 	let deployToCloudRun = false;
 	let trustTier: 'public' | 'authenticated' | 'privileged' = 'public';
+	let requiredRole = '';
 
 	let modelTouched = false;
 
@@ -38,8 +39,15 @@
 		model = PROVIDER_DEFAULTS[provider];
 	}
 
+	$: if (trustTier === 'public') {
+		requiredRole = '';
+	}
+
 	$: canSubmit =
-		name.trim().length > 0 && description.trim().length > 0 && systemPrompt.trim().length > 0;
+		name.trim().length > 0 &&
+		description.trim().length > 0 &&
+		systemPrompt.trim().length > 0 &&
+		(trustTier !== 'privileged' || requiredRole.trim().length > 0);
 
 	const onSubmit = async () => {
 		if (!canSubmit || submitting) return;
@@ -54,7 +62,8 @@
 			profile_image_url: profileImageUrl.trim() || undefined,
 			publish_to_registry: publishToRegistry,
 			deploy_to_cloud_run: deployToCloudRun,
-			trust_tier: trustTier
+			trust_tier: trustTier,
+			required_role: requiredRole.trim() || undefined
 		};
 
 		try {
@@ -162,9 +171,27 @@
 				>
 					<option value="public">🌐 {$i18n.t('Public')} — {$i18n.t('anyone can use')}</option>
 					<option value="authenticated">🎓 {$i18n.t('Authenticated')} — {$i18n.t('OSU login required')}</option>
-					<option value="privileged">🔒 {$i18n.t('Privileged')} — {$i18n.t('admin access only')}</option>
+					<option value="privileged">🔒 {$i18n.t('Privileged')} — {$i18n.t('verified role required')}</option>
 				</select>
 			</div>
+
+			{#if trustTier === 'privileged'}
+				<div>
+					<label class="block text-sm font-medium mb-1">
+						{$i18n.t('Required OSU Role')}
+						<span class="text-red-500 ml-0.5">*</span>
+					</label>
+					<input
+						type="text"
+						bind:value={requiredRole}
+						placeholder={$i18n.t('e.g. staff, student, faculty')}
+						class="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+					/>
+					<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+						{$i18n.t('Only users with this OSU role will be allowed to interact with this agent.')}
+					</p>
+				</div>
+			{/if}
 
 			<div>
 				<label class="block text-sm font-medium mb-1">
