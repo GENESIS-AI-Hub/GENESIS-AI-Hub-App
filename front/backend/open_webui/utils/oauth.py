@@ -11,7 +11,7 @@ from fastapi import (
     HTTPException,
     status,
 )
-from starlette.responses import RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse
 
 from open_webui.models.auths import Auths
 from open_webui.models.users import Users
@@ -225,7 +225,17 @@ class OAuthManager:
         client = self.get_client(provider)
         if client is None:
             raise HTTPException(404)
-        return await client.authorize_redirect(request, redirect_uri)
+        redirect_response = await client.authorize_redirect(request, redirect_uri)
+        # Carry popup mode through the OAuth round-trip via a short-lived cookie
+        if request.query_params.get("popup") == "1":
+            redirect_response.set_cookie(
+                key="oauth_popup",
+                value="1",
+                httponly=True,
+                samesite="lax",
+                max_age=600,
+            )
+        return redirect_response
 
     async def handle_callback(self, request, provider, response):
         if provider not in OAUTH_PROVIDERS:
@@ -433,6 +443,26 @@ class OAuthManager:
                 samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
                 secure=WEBUI_AUTH_COOKIE_SECURE,
             )
-        # Redirect back to the frontend with the JWT token
+        # Popup-initiated flow: close the window and pass the token back via postMessage
+        if request.cookies.get("oauth_popup") == "1":
+            response.delete_cookie("oauth_popup")
+            popup_html = f"""<!DOCTYPE html>
+<html>
+<head><title>Signing in...</title></head>
+<body>
+<script>
+  if (window.opener) {{
+    window.opener.postMessage(
+      {{ type: 'oauth_complete', token: '{jwt_token}' }},
+      window.location.origin
+    );
+  }}
+  window.close();
+</script>
+</body>
+</html>"""
+            return HTMLResponse(content=popup_html, headers=dict(response.headers))
+
+        # Standard redirect back to the frontend with the JWT token
         redirect_url = f"{request.base_url}auth#token={jwt_token}"
         return RedirectResponse(url=redirect_url, headers=response.headers)
