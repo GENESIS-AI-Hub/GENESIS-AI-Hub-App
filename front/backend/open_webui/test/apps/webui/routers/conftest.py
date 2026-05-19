@@ -159,8 +159,47 @@ class Agents:
         cls._store = []
 
 
+class AgentResponse(_BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    endpoint: Optional[str] = None
+    url: Optional[str] = None
+    trust_tier: Optional[str] = "public"
+    required_role: Optional[str] = None
+
+
+class RegisterAgentForm(_BaseModel):
+    name: str
+    url: Optional[str] = None
+    endpoint: Optional[str] = None
+    trust_tier: str = "public"
+    required_role: Optional[str] = None
+
+
+class RegisterAgentByUrlForm(_BaseModel):
+    url: str
+    trust_tier: str = "public"
+    required_role: Optional[str] = None
+
+
+class AgentUpdateForm(_BaseModel):
+    trust_tier: Optional[str] = None
+    required_role: Optional[str] = None
+
+
+class DeployAgentForm(_BaseModel):
+    trust_tier: str = "public"
+    required_role: Optional[str] = None
+
+
 _agents_mod = types.ModuleType("open_webui.models.agents")
 _agents_mod.AgentModel = AgentModel
+_agents_mod.AgentResponse = AgentResponse
+_agents_mod.RegisterAgentForm = RegisterAgentForm
+_agents_mod.RegisterAgentByUrlForm = RegisterAgentByUrlForm
+_agents_mod.AgentUpdateForm = AgentUpdateForm
+_agents_mod.DeployAgentForm = DeployAgentForm
 _agents_mod.Agents = Agents
 _agents_mod._Agents = Agents  # alias used by test file
 sys.modules["open_webui.models.agents"] = _agents_mod
@@ -198,13 +237,27 @@ async def get_admin_user():
 async def get_current_user():
     raise get_verified_user()
 
+def get_optional_user():
+    return None
+
+def decode_token(token: str) -> Optional[dict]:
+    return None
+
 _auth_mod.get_verified_user = get_verified_user
 _auth_mod.get_admin_user = get_admin_user
 _auth_mod.get_current_user = get_current_user
+_auth_mod.get_optional_user = get_optional_user
+_auth_mod.decode_token = decode_token
 sys.modules["open_webui.utils.auth"] = _auth_mod
 sys.modules.setdefault("open_webui.utils", MagicMock())
 
-# ── 11. fake open_webui.utils.chris_gemini ───────────────────────────────────
+# ── 11. fake open_webui.utils.a2a_runtime ────────────────────────────────────
+_a2a_runtime_mod = types.ModuleType("open_webui.utils.a2a_runtime")
+_a2a_runtime_mod.PROVIDER_DEFAULTS = {"anthropic": "claude-sonnet-4-6"}
+_a2a_runtime_mod.run_agent_turn = AsyncMock(return_value="stub reply")
+sys.modules["open_webui.utils.a2a_runtime"] = _a2a_runtime_mod
+
+# ── 12. fake open_webui.utils.chris_gemini ───────────────────────────────────
 _gemini_mod = types.ModuleType("open_webui.utils.chris_gemini")
 _gemini_mod.chat = AsyncMock(return_value="stubbed gemini response")
 sys.modules["open_webui.utils.chris_gemini"] = _gemini_mod

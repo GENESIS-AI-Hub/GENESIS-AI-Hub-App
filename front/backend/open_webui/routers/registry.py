@@ -104,6 +104,8 @@ async def submit_registry_agent(
             tools=tools,
             access_control=form_data.access_control,
             card_url=well_known_url,
+            trust_tier=form_data.trust_tier,
+            required_role=form_data.required_role or None,
         )
 
         if agent:

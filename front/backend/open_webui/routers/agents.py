@@ -1,3 +1,4 @@
+import time
 import uuid
 import json
 from typing import Optional, List, Dict, Any
@@ -6,6 +7,13 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 import requests
+
+
+def _fetch_well_known(url: str, timeout: int = 10) -> requests.Response:
+    """Fetch a URL, skipping TLS verification for localhost (mock CA in dev)."""
+    host = urlparse(url).hostname or ""
+    verify = host not in ("localhost", "127.0.0.1", "::1")
+    return requests.get(url, timeout=timeout, verify=verify)
 
 from open_webui.models.agents import (
     AgentModel,
@@ -18,10 +26,92 @@ from open_webui.models.agents import (
 )
 from open_webui.models.registry import RegistryAgents
 from open_webui.constants import ERROR_MESSAGES
-from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.auth import (
+    decode_token,
+    get_admin_user,
+    get_optional_user,
+    get_verified_user,
+)
 from open_webui.utils.a2a_runtime import PROVIDER_DEFAULTS, run_agent_turn
 
+
+def _get_elevated_until(request: Request) -> Optional[float]:
+    """Extract the elevated_until timestamp from the request's JWT, if present."""
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.removeprefix("Bearer ").strip()
+    if not token:
+        token = request.cookies.get("token", "")
+    if not token:
+        return None
+    data = decode_token(token)
+    return data.get("elevated_until") if data else None
+
 router = APIRouter()
+
+# Tier ordering: higher index = higher privilege
+_TIER_ORDER = {"public": 0, "authenticated": 1, "privileged": 2}
+
+
+def _get_user_scope(user, elevated_until: Optional[float] = None) -> str:
+    """Map the existing Open WebUI role to a trust tier.
+
+    TODO(#141/#143): Replace this with real OSU OIDC scope claims once the
+    identity provider integration in #141 lands.  For now we use the platform
+    role as a proxy:
+      admin   → privileged
+      user    → authenticated
+      pending → public
+      None    → public (unauthenticated callers on optional-auth endpoints)
+
+    Step-up elevation: if the request's JWT carries a valid elevated_until
+    timestamp (set by the step-up MFA callback), any authenticated user is
+    temporarily treated as privileged for the duration.
+    """
+    if user is None:
+        return "public"
+    if elevated_until and time.time() < elevated_until:
+        return "privileged"
+    if user.role == "admin":
+        return "privileged"
+    if user.role == "user":
+        return "authenticated"
+    return "public"
+
+
+def _enforce_tier(
+    agent: AgentModel, user, elevated_until: Optional[float] = None
+) -> None:
+    """Raise a structured 403 if the user's scope is below the agent's tier."""
+    required = _TIER_ORDER.get(agent.trust_tier or "public", 0)
+    user_scope = _get_user_scope(user, elevated_until)
+    available = _TIER_ORDER.get(user_scope, 0)
+
+    if available < required:
+        # Distinguish "you need to log in" from "you need step-up MFA"
+        code = "tier_required" if user_scope == "public" else "step_up_required"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": code,
+                "required_tier": agent.trust_tier,
+                "required_role": agent.required_role,
+            },
+        )
+
+    # Tier passed — check OSU role restriction if set (admin bypasses).
+    # user.osu_role is populated after #141 (OSU OIDC) lands; until then
+    # getattr returns None which correctly blocks role-restricted agents.
+    if agent.required_role and user is not None and getattr(user, "role", None) != "admin":
+        user_osu_role = getattr(user, "osu_role", None)
+        if user_osu_role != agent.required_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "role_required",
+                    "required_tier": agent.trust_tier,
+                    "required_role": agent.required_role,
+                },
+            )
 
 ############################
 # JSON-RPC Message Models
@@ -185,6 +275,8 @@ async def register_agent(
         endpoint=form_data.endpoint,
         input_schema=form_data.input_schema,
         output_schema=form_data.output_schema,
+        trust_tier=form_data.trust_tier,
+        required_role=form_data.required_role,
         user_id=user.id,
     )
 
@@ -229,7 +321,7 @@ async def register_agent_by_url(
         well_known_url = f"{base_url}/.well-known/agent.json"
 
     try:
-        response = requests.get(well_known_url, timeout=10)
+        response = _fetch_well_known(well_known_url)
         response.raise_for_status()
         agent_data = response.json()
 
@@ -299,6 +391,41 @@ async def register_agent_by_url(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid JSON response from agent: {str(e)}",
+        )
+
+
+############################
+# FetchWellKnown
+############################
+
+
+@router.get("/fetch-well-known")
+async def fetch_agent_well_known(agent_url: str, user=Depends(get_verified_user)):
+    """Fetch an agent's .well-known/agent.json file without registering"""
+    if not agent_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent URL is required",
+        )
+
+    # Ensure the URL has proper scheme
+    if not agent_url.startswith(("http://", "https://")):
+        agent_url = "https://" + agent_url
+
+    # Parse the URL
+    parsed_url = urlparse(agent_url)
+    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    well_known_url = f"{base_url}/.well-known/agent.json"
+
+    try:
+        response = _fetch_well_known(well_known_url)
+        response.raise_for_status()
+        agent_data = response.json()
+        return agent_data
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error fetching agent's .well-known/agent.json: {str(e)}",
         )
 
 
@@ -377,6 +504,7 @@ async def delete_agent(agent_id: str, user=Depends(get_verified_user)):
 async def send_message_to_agent(
     agent_id: str,
     form_data: SendMessageToAgentForm,
+    request: Request,
     user=Depends(get_verified_user),
 ):
     """Send a message to an A2A agent using JSON-RPC protocol"""
@@ -386,6 +514,8 @@ async def send_message_to_agent(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found",
         )
+
+    _enforce_tier(agent, user, elevated_until=_get_elevated_until(request))
 
     if not agent.endpoint and not agent.url:
         raise HTTPException(
@@ -411,8 +541,10 @@ async def send_message_to_agent(
     }
 
     try:
-        # Send request to external agent
-        response = requests.post(endpoint, json=jsonrpc_request, timeout=30)
+        # Send request to external agent (skip TLS check for localhost dev agents)
+        _host = urlparse(endpoint).hostname or ""
+        _verify = _host not in ("localhost", "127.0.0.1", "::1")
+        response = requests.post(endpoint, json=jsonrpc_request, timeout=30, verify=_verify)
         response.raise_for_status()
 
         response_data = response.json()
@@ -432,6 +564,45 @@ async def send_message_to_agent(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing agent response: {str(e)}",
         )
+
+
+############################
+# GetAgentsAsModels
+############################
+
+
+@router.get("/models")
+async def get_agents_as_models(user=Depends(get_verified_user)):
+    """Get all active agents formatted as models for the chat interface"""
+    agents = Agents.get_agents()
+
+    models = []
+    for agent in agents:
+        model_id = f"agent:{agent.id}"
+        models.append({
+            "id": model_id,
+            "name": agent.name,
+            "object": "model",
+            "created": agent.created_at,
+            "owned_by": "a2a-agent",
+            "agent": {
+                "id": agent.id,
+                "description": agent.description,
+                "endpoint": agent.endpoint or agent.url,
+                "capabilities": agent.capabilities,
+                "skills": agent.skills,
+            },
+            "info": {
+                "meta": {
+                    "description": agent.description,
+                    "capabilities": agent.capabilities,
+                    "trust_tier": agent.trust_tier,
+                    "required_role": agent.required_role,
+                }
+            }
+        })
+
+    return {"data": models}
 
 
 ############################
@@ -539,6 +710,8 @@ async def deploy_agent(
         model=model,
         deployment_mode=deployment_mode,
         deployment_status="ready",
+        trust_tier=form_data.trust_tier,
+        required_role=form_data.required_role,
         user_id=user.id,
     )
 
@@ -563,6 +736,8 @@ async def deploy_agent(
                     "skills": card_skills,
                 },
                 access_control=None,
+                trust_tier=form_data.trust_tier,
+                required_role=form_data.required_role,
             )
         except Exception as e:
             # Registry publish is best-effort; don't fail the deploy.
@@ -590,8 +765,17 @@ async def get_internal_agent_card(request: Request, agent_id: str):
 
 
 @router.post("/{agent_id}/internal-a2a")
-async def internal_agent_jsonrpc(agent_id: str, request: Request):
-    """JSON-RPC handler for an internally-hosted agent. Public by A2A spec."""
+async def internal_agent_jsonrpc(
+    agent_id: str,
+    request: Request,
+    user=Depends(get_optional_user),
+):
+    """JSON-RPC handler for an internally-hosted agent.
+
+    Authentication is optional: public-tier agents are accessible to
+    unauthenticated callers (A2A federation). Authenticated/privileged agents
+    require a valid bearer token with sufficient scope.
+    """
     try:
         body = await request.json()
     except Exception:
@@ -609,6 +793,16 @@ async def internal_agent_jsonrpc(agent_id: str, request: Request):
         return {
             "jsonrpc": "2.0",
             "error": {"code": -32004, "message": "Agent not found"},
+            "id": req_id,
+        }
+
+    try:
+        _enforce_tier(agent, user, elevated_until=_get_elevated_until(request))
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {"message": exc.detail}
+        return {
+            "jsonrpc": "2.0",
+            "error": {"code": -32001, **detail},
             "id": req_id,
         }
 

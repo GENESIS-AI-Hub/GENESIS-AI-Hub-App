@@ -247,6 +247,8 @@ async def get_all_models(request, user: UserModel = None):
                         "endpoint": agent.endpoint or agent.url,
                         "capabilities": agent.capabilities,
                         "skills": agent.skills,
+                        "trust_tier": agent.trust_tier or "public",
+                        "required_role": agent.required_role,
                     },
                     "info": {
                         "meta": {

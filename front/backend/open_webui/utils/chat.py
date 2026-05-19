@@ -3,13 +3,14 @@ import logging
 import sys
 
 from typing import Any, Optional
+from urllib.parse import urlparse
 import random
 import json
 import inspect
 import uuid
 import asyncio
 
-from fastapi import Request, status
+from fastapi import HTTPException, Request, status
 from starlette.responses import Response, StreamingResponse
 
 
@@ -40,6 +41,7 @@ from open_webui.models.functions import Functions
 from open_webui.models.models import Models
 
 
+from open_webui.utils.auth import decode_token
 from open_webui.utils.plugin import load_function_module_by_id
 from open_webui.utils.models import get_all_models, check_model_access
 from open_webui.utils.payload import convert_payload_openai_to_ollama
@@ -274,6 +276,43 @@ async def generate_a2a_agent_chat_completion(
 
     log.info(f"Sending A2A request to: {agent_endpoint}")
 
+    # --- Trust tier enforcement ---
+    _TIER_ORDER = {"public": 0, "authenticated": 1, "privileged": 2}
+    trust_tier = agent_info.get("trust_tier", "public") or "public"
+    required_role = agent_info.get("required_role")
+
+    # Determine effective scope; honour elevated_until JWT claim if present
+    _elevated_until: Optional[float] = None
+    _raw_token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if not _raw_token:
+        _raw_token = request.cookies.get("token", "")
+    if _raw_token:
+        _claims = decode_token(_raw_token)
+        _elevated_until = (_claims or {}).get("elevated_until")
+
+    if _elevated_until and time.time() < _elevated_until:
+        _user_scope = "privileged"
+    elif user is None:
+        _user_scope = "public"
+    elif user.role == "admin":
+        _user_scope = "privileged"
+    elif user.role == "user":
+        _user_scope = "authenticated"
+    else:
+        _user_scope = "public"
+
+    if _TIER_ORDER.get(_user_scope, 0) < _TIER_ORDER.get(trust_tier, 0):
+        _code = "step_up_required" if _user_scope == "authenticated" else "tier_required"
+        raise HTTPException(
+            status_code=403,
+            detail={"code": _code, "required_tier": trust_tier, "required_role": required_role},
+        )
+    # --- end tier enforcement ---
+
+    # Skip TLS verification for localhost agents that use a dev/mock CA
+    _host = urlparse(agent_endpoint).hostname or ""
+    _ssl_verify = _host not in ("localhost", "127.0.0.1", "::1")
+
     # Get the last user message from form_data
     messages = form_data.get("messages", [])
     if not messages:
@@ -305,7 +344,7 @@ async def generate_a2a_agent_chat_completion(
         # For streaming, we'll make a non-streaming request and stream the response
         # A2A protocol doesn't necessarily support streaming, so we convert
         try:
-            response = req.post(agent_endpoint, json=jsonrpc_request, timeout=60)
+            response = req.post(agent_endpoint, json=jsonrpc_request, timeout=60, verify=_ssl_verify)
             response.raise_for_status()
             response_data = response.json()
 
@@ -382,7 +421,7 @@ async def generate_a2a_agent_chat_completion(
     else:
         # Non-streaming response
         try:
-            response = req.post(agent_endpoint, json=jsonrpc_request, timeout=60)
+            response = req.post(agent_endpoint, json=jsonrpc_request, timeout=60, verify=_ssl_verify)
             response.raise_for_status()
             response_data = response.json()
 
@@ -595,6 +634,8 @@ async def generate_chat_completion(
                 "endpoint": agent.endpoint or agent.url,
                 "capabilities": agent.capabilities,
                 "skills": agent.skills,
+                "trust_tier": agent.trust_tier or "public",
+                "required_role": agent.required_role,
             }
         }
     elif model_id not in models:

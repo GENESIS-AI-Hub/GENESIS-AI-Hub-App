@@ -21,6 +21,8 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
 	import ArrowDownTray from '$lib/components/icons/ArrowDownTray.svelte';
+	import TrustShieldBadge from '$lib/components/common/TrustShieldBadge.svelte';
+	import StepUpAuthModal from '$lib/components/common/StepUpAuthModal.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -31,6 +33,45 @@
 	let searchValue = '';
 
 	let localAgents = [];
+
+	// Step-up / tier-required modal state
+	let stepUpModal: { code: 'tier_required' | 'step_up_required'; requiredTier: string } | null =
+		null;
+
+	/** Unix timestamp (ms) until which the user holds a step-up elevated session.
+	 *  Set when the step-up OAuth popup completes successfully. */
+	let elevatedUntilMs: number | null = null;
+
+	function onElevated(evt: CustomEvent<{ token: string }>) {
+		// Token already stored in localStorage by the modal.
+		// Parse the elevated_until claim to know how long elevation lasts.
+		try {
+			const payload = JSON.parse(atob(evt.detail.token.split('.')[1]));
+			if (payload.elevated_until) {
+				elevatedUntilMs = payload.elevated_until * 1000; // convert epoch seconds → ms
+			}
+		} catch {
+			elevatedUntilMs = Date.now() + 30 * 60 * 1000; // fallback: 30 min
+		}
+	}
+
+	/** Scope the current user holds: public < authenticated < privileged */
+	$: baseScope = $user?.role === 'admin'
+		? 'privileged'
+		: $user?.role === 'user'
+			? 'authenticated'
+			: 'public';
+
+	$: userScope =
+		elevatedUntilMs && Date.now() < elevatedUntilMs ? 'privileged' : baseScope;
+
+	const TIER_ORDER: Record<string, number> = { public: 0, authenticated: 1, privileged: 2 };
+
+	function canAccessAgent(agent: { trust_tier?: string | null }): boolean {
+		const required = TIER_ORDER[agent.trust_tier ?? 'public'] ?? 0;
+		const available = TIER_ORDER[userScope] ?? 0;
+		return available >= required;
+	}
 
 	const fetchLocalAgents = async () => {
 		try {
@@ -98,30 +139,13 @@
 	const isOwnerOrAdmin = (agent: RegistryAgent): boolean =>
 		$user?.role === 'admin' || agent.user_id === $user?.id;
 
-		const refreshAgents = async () => {
+	const refreshAgents = async () => {
 		const token = localStorage.token as string;
 		[agents, featuredAgents] = await Promise.all([
 			getRegistryAgents(token),
 			getFeaturedAgents(token)
 		]);
 		await fetchLocalAgents();
-	};
-
-	const handleAddAgent = async () => {
-		if (!addUrl || addSubmitting) return;
-		addSubmitting = true;
-		try {
-			await submitRegistryAgent(localStorage.token as string, addUrl, addImageUrl || undefined);
-			toast.success($i18n.t('Agent added to registry'));
-			showAddModal = false;
-			addUrl = '';
-			addImageUrl = '';
-			await refreshAgents();
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : $i18n.t('Failed to add agent'));
-		} finally {
-			addSubmitting = false;
-		}
 	};
 
 	const handleInstall = async (agent: RegistryAgent) => {
@@ -149,7 +173,14 @@
 				models.set(await getModels(localStorage.token as string));
 			} else {
 				const err = await res.json().catch(() => ({}));
-				toast.error((err as { detail?: string }).detail ?? $i18n.t('Failed to install agent'));
+				if (res.status === 403 && err.detail?.code) {
+					stepUpModal = {
+						code: err.detail.code,
+						requiredTier: err.detail.required_tier ?? 'authenticated'
+					};
+				} else {
+					toast.error((err as { detail?: string }).detail ?? $i18n.t('Failed to install agent'));
+				}
 			}
 		} catch {
 			toast.error($i18n.t('Failed to install agent'));
@@ -200,6 +231,10 @@
 		await refreshAgents();
 		loaded = true;
 	});
+
+	function onImageError(e: Event) {
+		(e.target as HTMLImageElement).src = '/static/favicon.png';
+	}
 </script>
 
 <svelte:head>
@@ -207,6 +242,15 @@
 		{$i18n.t('Agents')} | {$WEBUI_NAME}
 	</title>
 </svelte:head>
+
+{#if stepUpModal}
+	<StepUpAuthModal
+		code={stepUpModal.code}
+		requiredTier={stepUpModal.requiredTier}
+		on:close={() => (stepUpModal = null)}
+		on:elevated={onElevated}
+	/>
+{/if}
 
 {#if loaded}
 	<!-- Clear Registry Confirm Modal -->
@@ -535,6 +579,10 @@
 								</div>
 								
 								<div class="mt-2 flex flex-wrap gap-1">
+									<TrustShieldBadge
+										tier={agent.trust_tier ?? 'public'}
+										locked={!canAccessAgent(agent)}
+									/>
 									{#if agent.model || agent.foundational_model}
 										<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
 											{agent.model ?? agent.foundational_model}
@@ -571,9 +619,30 @@
 	<!-- All Agents Grid -->
 	<div class="my-2 mb-5 gap-2 grid lg:grid-cols-2 xl:grid-cols-3" id="agent-list">
 		{#each filteredAgents as agent}
+			{@const accessible = canAccessAgent(agent)}
 			<div
-				class="flex flex-col w-full px-3 py-2 dark:bg-white/5 bg-black/5 rounded-xl transition border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+				class="relative flex flex-col w-full px-3 py-2 dark:bg-white/5 bg-black/5 rounded-xl transition border
+					{accessible
+						? 'border-transparent hover:border-gray-200 dark:hover:border-gray-700'
+						: 'border-gray-200 dark:border-gray-700 opacity-80'}"
 			>
+				<!-- Locked overlay for inaccessible agents -->
+				{#if !accessible}
+					<div
+						class="absolute inset-0 rounded-xl bg-gray-50/60 dark:bg-gray-900/60 flex items-center justify-center z-10 cursor-pointer"
+						title="Your account does not have access to this agent"
+						role="button"
+						tabindex="0"
+						on:click={() => installAgent(agent)}
+						on:keydown={(e) => e.key === 'Enter' && installAgent(agent)}
+					>
+						<div class="flex flex-col items-center gap-1 text-gray-500 dark:text-gray-400">
+							<span class="text-2xl">🔐</span>
+							<span class="text-xs font-medium">Access restricted</span>
+						</div>
+					</div>
+				{/if}
+
 				<div class="flex gap-4 mt-0.5 mb-0.5">
 					<div class="w-[44px] shrink-0">
 						<div class="rounded-full object-cover">
@@ -581,15 +650,13 @@
 								src={agent.image_url ?? '/static/favicon.png'}
 								alt="agent profile"
 								class="rounded-full w-full h-auto object-cover"
-								on:error={(e) => {
-									if (e.target instanceof HTMLImageElement) e.target.src = '/static/favicon.png';
-								}}
+								on:error={onImageError}
 							/>
 						</div>
 					</div>
 
 					<div class="flex flex-col flex-1 min-w-0">
-						<div class="flex justify-between items-start">
+						<div class="flex justify-between items-start gap-1">
 							<div class="flex items-center gap-1.5 min-w-0">
 								<div class="font-semibold line-clamp-1 break-all" title={agent.name}>
 									{agent.name}
@@ -619,11 +686,14 @@
 								{/if}
 							</div>
 
-							<!-- Action buttons -->
-							<div class="flex items-center gap-1">
-								<Tooltip content={$i18n.t('Install')}>
+							<!-- Actions — shown for all; locked agents get the modal instead of install -->
+							<div class="flex items-center gap-1 shrink-0">
+								<Tooltip content={accessible ? $i18n.t('Install') : $i18n.t('Access restricted')}>
 									<button
-										class="p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition text-gray-600 dark:text-gray-300"
+										class="p-1.5 rounded-lg transition
+											{accessible
+												? 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
+												: 'text-gray-400 dark:text-gray-600 cursor-not-allowed'}"
 										on:click={() => handleInstall(agent)}
 									>
 										<ArrowDownTray className="size-4" />
@@ -730,6 +800,12 @@
 						</div>
 
 						<div class="mt-2 flex flex-wrap gap-1">
+							<!-- Trust shield badge -->
+							<TrustShieldBadge
+								tier={agent.trust_tier ?? 'public'}
+								locked={!accessible}
+							/>
+
 							{#if agent.foundational_model}
 								<span
 									class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800"

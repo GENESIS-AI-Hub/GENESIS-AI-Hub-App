@@ -1,8 +1,8 @@
 import logging
 import time
-from typing import Optional, List
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import BigInteger, Column, String, Text, Boolean
+from typing import Literal, Optional, List
+from pydantic import BaseModel, ConfigDict, model_validator
+from sqlalchemy import BigInteger, Column, String, Text, Boolean, text
 from sqlalchemy.exc import IntegrityError
 
 from open_webui.internal.db import Base, JSONField, get_db, engine
@@ -42,6 +42,11 @@ class Agent(Base):
     deployment_mode = Column(String, nullable=True)
     deployment_status = Column(String, nullable=True)
 
+    # Trust tier — coarse access gate (public / authenticated / privileged)
+    # TODO(#141/#143): replace role→tier mapping with real OSU OIDC scope claims
+    trust_tier = Column(String, nullable=False, server_default=text("'public'"))
+    required_role = Column(String, nullable=True)  # stored, not yet enforced (#141)
+
     # Metadata
     is_active = Column(Boolean, default=True)
     created_at = Column(BigInteger)
@@ -70,6 +75,8 @@ class AgentModel(BaseModel):
     model: Optional[str] = None
     deployment_mode: Optional[str] = None
     deployment_status: Optional[str] = None
+    trust_tier: Literal["public", "authenticated", "privileged"] = "public"
+    required_role: Optional[str] = None
     is_active: bool = True
     created_at: int
     updated_at: int
@@ -90,6 +97,8 @@ class AgentResponse(BaseModel):
     url: Optional[str] = None
     capabilities: Optional[dict] = None
     skills: Optional[List[dict]] = None
+    trust_tier: Literal["public", "authenticated", "privileged"] = "public"
+    required_role: Optional[str] = None
     is_active: bool = True
 
 
@@ -99,6 +108,18 @@ class RegisterAgentForm(BaseModel):
     endpoint: Optional[str] = None
     input_schema: Optional[dict] = None
     output_schema: Optional[dict] = None
+    trust_tier: Literal["public", "authenticated", "privileged"] = "public"
+    required_role: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _validate_tier_role_pair(self) -> "RegisterAgentForm":
+        if self.trust_tier == "public":
+            self.required_role = None
+        elif self.trust_tier == "privileged" and not self.required_role:
+            raise ValueError(
+                "required_role must be set when trust_tier is 'privileged'"
+            )
+        return self
 
 
 class RegisterAgentByUrlForm(BaseModel):
@@ -112,6 +133,8 @@ class AgentUpdateForm(BaseModel):
     endpoint: Optional[str] = None
     url: Optional[str] = None
     is_active: Optional[bool] = None
+    trust_tier: Optional[Literal["public", "authenticated", "privileged"]] = None
+    required_role: Optional[str] = None
 
 
 class DeployAgentForm(BaseModel):
@@ -123,8 +146,20 @@ class DeployAgentForm(BaseModel):
     profile_image_url: Optional[str] = None
     publish_to_registry: bool = True
     deploy_to_cloud_run: bool = False
+    trust_tier: Literal["public", "authenticated", "privileged"] = "public"
+    required_role: Optional[str] = None
 
     model_config = ConfigDict(protected_namespaces=())
+
+    @model_validator(mode="after")
+    def _validate_tier_role_pair(self) -> "DeployAgentForm":
+        if self.trust_tier == "public":
+            self.required_role = None
+        elif self.trust_tier == "privileged" and not self.required_role:
+            raise ValueError(
+                "required_role must be set when trust_tier is 'privileged'"
+            )
+        return self
 
 
 ####################
@@ -156,6 +191,8 @@ class AgentsTable:
         model: Optional[str] = None,
         deployment_mode: Optional[str] = None,
         deployment_status: Optional[str] = None,
+        trust_tier: str = "public",
+        required_role: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> Optional[AgentModel]:
         with get_db() as db:
@@ -179,6 +216,8 @@ class AgentsTable:
                     "model": model,
                     "deployment_mode": deployment_mode,
                     "deployment_status": deployment_status,
+                    "trust_tier": trust_tier,
+                    "required_role": required_role,
                     "is_active": True,
                     "created_at": int(time.time()),
                     "updated_at": int(time.time()),

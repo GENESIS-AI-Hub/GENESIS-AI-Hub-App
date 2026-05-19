@@ -3,6 +3,8 @@ import uuid
 import time
 import datetime
 import logging
+import json
+from datetime import timedelta
 from aiohttp import ClientSession
 
 from open_webui.models.auths import (
@@ -37,6 +39,7 @@ from open_webui.utils.misc import parse_duration, validate_email_format
 from open_webui.utils.auth import (
     create_api_key,
     create_token,
+    decode_token,
     get_admin_user,
     get_verified_user,
     get_current_user,
@@ -883,3 +886,218 @@ async def get_api_key(user=Depends(get_current_user)):
         }
     else:
         raise HTTPException(404, detail=ERROR_MESSAGES.API_KEY_NOT_FOUND)
+
+
+############################
+# Step-Up Authentication (#143)
+############################
+# Allows authenticated users to obtain a short-lived elevated JWT by
+# re-authenticating through the existing Microsoft SSO provider. The elevated
+# token carries an elevated_until Unix timestamp that _get_user_scope() reads
+# to temporarily grant "privileged" scope for the duration of the step-up.
+#
+# Flow:
+#   1. Frontend POSTs to /step-up/initiate → receives {authorize_url}
+#   2. Frontend opens a popup to that URL
+#   3. Microsoft redirects popup to /step-up/callback
+#   4. Callback issues a new JWT with elevated_until = now + 30 min
+#   5. Callback returns a minimal HTML page that stores the token and closes
+#   6. Frontend detects popup closed, reads the elevated token, retries request
+############################
+
+_STEP_UP_TTL_SECONDS = 1800  # 30 minutes
+
+
+def _build_ms_authorize_url(
+    request: Request,
+    state_token: str,
+) -> Optional[str]:
+    """Construct the Microsoft OIDC authorize URL.
+
+    Returns None if Microsoft OAuth is not configured.
+    """
+    from open_webui.config import (
+        MICROSOFT_CLIENT_ID,
+        MICROSOFT_CLIENT_TENANT_ID,
+    )
+
+    client_id = MICROSOFT_CLIENT_ID.value
+    tenant_id = MICROSOFT_CLIENT_TENANT_ID.value
+    if not client_id or not tenant_id:
+        return None
+
+    # Callback must be an absolute URL so Microsoft can redirect back to us.
+    callback_url = str(request.base_url).rstrip("/") + "/api/v1/auths/step-up/callback"
+
+    from urllib.parse import urlencode
+
+    params = urlencode(
+        {
+            "client_id": client_id,
+            "response_type": "code",
+            "redirect_uri": callback_url,
+            "scope": "openid email profile",
+            "state": state_token,
+            "prompt": "login",
+        }
+    )
+    return f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize?{params}"
+
+
+@router.post("/step-up/initiate")
+async def step_up_initiate(
+    request: Request,
+    user=Depends(get_verified_user),
+):
+    """Return the Microsoft SSO URL for step-up re-authentication.
+
+    The caller should open the returned authorize_url in a popup.  After the
+    user re-authenticates, the popup will land on /step-up/callback which
+    issues the elevated JWT and closes itself.
+    """
+    # Sign a short-lived state token so the callback can verify the identity
+    # of the user who started the flow and reject replays.
+    state_payload = create_token(
+        data={"user_id": user.id, "purpose": "stepup"},
+        expires_delta=timedelta(minutes=5),
+    )
+
+    authorize_url = _build_ms_authorize_url(request, state_payload)
+    if not authorize_url:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Microsoft OAuth is not configured on this server.",
+        )
+
+    return {"authorize_url": authorize_url}
+
+
+@router.get("/step-up/callback", name="step_up_callback")
+async def step_up_callback(
+    request: Request,
+    code: str = "",
+    state: str = "",
+    error: str = "",
+):
+    """Handle the Microsoft redirect after step-up re-authentication.
+
+    Issues a new JWT with an elevated_until claim and returns a minimal HTML
+    page that writes the token to localStorage and closes the popup.
+    """
+    if error:
+        return _step_up_error_page(f"OAuth error: {error}")
+
+    if not code or not state:
+        return _step_up_error_page("Missing code or state parameter.")
+
+    # Verify the signed state token to get the user_id.
+    state_data = decode_token(state)
+    if not state_data or state_data.get("purpose") != "stepup":
+        return _step_up_error_page("Invalid or expired state token.")
+
+    user_id = state_data.get("user_id")
+    user = Users.get_user_by_id(user_id)
+    if not user:
+        return _step_up_error_page("User not found.")
+
+    # Exchange the authorization code for tokens using Microsoft's token endpoint.
+    from open_webui.config import (
+        MICROSOFT_CLIENT_ID,
+        MICROSOFT_CLIENT_SECRET,
+        MICROSOFT_CLIENT_TENANT_ID,
+    )
+
+    callback_url = str(request.url).split("?")[0]
+
+    async with ClientSession() as session:
+        token_url = (
+            f"https://login.microsoftonline.com/"
+            f"{MICROSOFT_CLIENT_TENANT_ID.value}/oauth2/v2.0/token"
+        )
+        async with session.post(
+            token_url,
+            data={
+                "client_id": MICROSOFT_CLIENT_ID.value,
+                "client_secret": MICROSOFT_CLIENT_SECRET.value,
+                "code": code,
+                "redirect_uri": callback_url,
+                "grant_type": "authorization_code",
+            },
+        ) as resp:
+            if resp.status != 200:
+                return _step_up_error_page("Token exchange failed.")
+            token_response = await resp.json()
+
+    id_token = token_response.get("id_token", "")
+    if not id_token:
+        return _step_up_error_page("No id_token in token response.")
+
+    # Decode the id_token header to verify the user's identity.
+    # We trust Microsoft's signature here (standard OAuth PKCE trust).
+    import base64
+
+    try:
+        payload_b64 = id_token.split(".")[1]
+        # Add padding so base64.b64decode doesn't fail on short payloads.
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        id_token_payload = json.loads(base64.b64decode(payload_b64))
+    except Exception:
+        return _step_up_error_page("Could not decode id_token.")
+
+    ms_email = id_token_payload.get("email") or id_token_payload.get("preferred_username", "")
+    if ms_email.lower() != user.email.lower():
+        return _step_up_error_page(
+            "Re-authenticated identity does not match the original session."
+        )
+
+    # Issue a new JWT with the elevated_until claim.
+    elevated_until = time.time() + _STEP_UP_TTL_SECONDS
+    elevated_token = create_token(
+        data={"id": user.id, "elevated_until": elevated_until},
+        expires_delta=parse_duration(request.app.state.config.JWT_EXPIRES_IN),
+    )
+
+    return _step_up_success_page(elevated_token)
+
+
+def _step_up_success_page(token: str):
+    """Minimal HTML that stores the elevated token and closes the popup."""
+    from fastapi.responses import HTMLResponse
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head><title>Verified</title></head>
+<body>
+<script>
+  try {{
+    localStorage.setItem('stepup_token', {json.dumps(token)});
+  }} catch(e) {{}}
+  if (window.opener) {{
+    window.opener.postMessage({{type:'stepup_complete',token:{json.dumps(token)}}}, window.location.origin);
+  }}
+  window.close();
+</script>
+<p>Verification complete. You may close this window.</p>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
+def _step_up_error_page(message: str):
+    """Minimal HTML shown when step-up fails, before the popup closes."""
+    from fastapi.responses import HTMLResponse
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head><title>Verification Failed</title></head>
+<body>
+<script>
+  if (window.opener) {{
+    window.opener.postMessage({{type:'stepup_error',message:{json.dumps(message)}}}, window.location.origin);
+  }}
+  window.close();
+</script>
+<p>Verification failed: {message}</p>
+</body>
+</html>"""
+    return HTMLResponse(content=html)

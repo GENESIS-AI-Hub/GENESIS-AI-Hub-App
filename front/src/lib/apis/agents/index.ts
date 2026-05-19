@@ -9,6 +9,7 @@ export type DeployAgentForm = {
 	profile_image_url?: string;
 	publish_to_registry?: boolean;
 	deploy_to_cloud_run?: boolean;
+	trust_tier?: 'public' | 'authenticated' | 'privileged';
 };
 
 export const deployAgent = async (token: string, form: DeployAgentForm) => {
