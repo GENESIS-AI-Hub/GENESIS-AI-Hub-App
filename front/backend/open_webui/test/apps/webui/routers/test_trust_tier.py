@@ -152,10 +152,6 @@ class TestElevatedUntilScope:
         assert exc_info.value.detail["code"] == "step_up_required"
 
 
-@pytest.mark.skip(
-    reason="OSU OIDC role enforcement (#141) not yet landed. "
-    "These tests document desired post-#141 behaviour for osu_role claims."
-)
 class TestRequiredRoleMatrix:
     """After OSU OIDC (#141) lands, _get_user_scope should read user.osu_role
     (staff, student, faculty, …) and _enforce_tier should check it against

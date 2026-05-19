@@ -67,7 +67,7 @@
 
 	const TIER_ORDER: Record<string, number> = { public: 0, authenticated: 1, privileged: 2 };
 
-	function canAccessAgent(agent: RegistryAgent): boolean {
+	function canAccessAgent(agent: { trust_tier?: string | null }): boolean {
 		const required = TIER_ORDER[agent.trust_tier ?? 'public'] ?? 0;
 		const available = TIER_ORDER[userScope] ?? 0;
 		return available >= required;
@@ -135,6 +135,26 @@
 	);
 
 	const isPublic = (agent: RegistryAgent): boolean => agent.access_control === null;
+
+	const isOwnerOrAdmin = (agent: RegistryAgent): boolean =>
+		$user?.role === 'admin' || agent.user_id === $user?.id;
+
+	const refreshAgents = async () => {
+		const token = localStorage.token as string;
+		[agents, featuredAgents] = await Promise.all([
+			getRegistryAgents(token),
+			getFeaturedAgents(token)
+		]);
+		await fetchLocalAgents();
+	};
+
+	const handleInstall = async (agent: RegistryAgent) => {
+		const installUrl = agent.card_url || agent.url;
+		if (!installUrl) {
+			toast.error($i18n.t('No URL available to install this agent.'));
+			return;
+		}
+
 		try {
 			const res = await fetch(`${WEBUI_BASE_URL}/api/v1/agents/register-by-url`, {
 				method: 'POST',
@@ -559,6 +579,10 @@
 								</div>
 								
 								<div class="mt-2 flex flex-wrap gap-1">
+									<TrustShieldBadge
+										tier={agent.trust_tier ?? 'public'}
+										locked={!canAccessAgent(agent)}
+									/>
 									{#if agent.model || agent.foundational_model}
 										<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
 											{agent.model ?? agent.foundational_model}
@@ -760,6 +784,8 @@
 										<button
 											class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 transition"
 											on:click={() => handleDelete(agent)}
+										>
+											<GarbageBin className="size-4" />
 										</button>
 									</Tooltip>
 								{/if}

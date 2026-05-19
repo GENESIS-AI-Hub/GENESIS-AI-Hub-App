@@ -86,23 +86,32 @@ def _enforce_tier(
     user_scope = _get_user_scope(user, elevated_until)
     available = _TIER_ORDER.get(user_scope, 0)
 
-    if available >= required:
-        return
+    if available < required:
+        # Distinguish "you need to log in" from "you need step-up MFA"
+        code = "tier_required" if user_scope == "public" else "step_up_required"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": code,
+                "required_tier": agent.trust_tier,
+                "required_role": agent.required_role,
+            },
+        )
 
-    # Distinguish "you need to log in" from "you need step-up MFA"
-    if user_scope == "public":
-        code = "tier_required"
-    else:
-        code = "step_up_required"
-
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail={
-            "code": code,
-            "required_tier": agent.trust_tier,
-            "required_role": agent.required_role,
-        },
-    )
+    # Tier passed — check OSU role restriction if set (admin bypasses).
+    # user.osu_role is populated after #141 (OSU OIDC) lands; until then
+    # getattr returns None which correctly blocks role-restricted agents.
+    if agent.required_role and user is not None and getattr(user, "role", None) != "admin":
+        user_osu_role = getattr(user, "osu_role", None)
+        if user_osu_role != agent.required_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "role_required",
+                    "required_tier": agent.trust_tier,
+                    "required_role": agent.required_role,
+                },
+            )
 
 ############################
 # JSON-RPC Message Models
