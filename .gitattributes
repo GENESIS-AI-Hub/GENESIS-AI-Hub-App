@@ -1,0 +1,19 @@
+# Normalize line endings: store as LF in the repo and check out as LF
+# everywhere. Prevents CRLF churn from Windows/WSL working trees.
+* text=auto eol=lf
+
+# Treat known binary types as binary (never apply EOL conversion).
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.pdf  binary
+*.gz   binary
+*.zip  binary
+*.wasm binary
