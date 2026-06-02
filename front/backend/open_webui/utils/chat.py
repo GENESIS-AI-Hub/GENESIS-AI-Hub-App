@@ -43,6 +43,8 @@ from open_webui.models.models import Models
 
 from open_webui.utils.plugin import load_function_module_by_id
 from open_webui.utils.models import get_all_models, check_model_access
+from open_webui.utils.access_control import has_access
+from open_webui.utils.a2a import post_jsonrpc_to_agent
 from open_webui.utils.payload import convert_payload_openai_to_ollama
 from open_webui.utils.response import (
     convert_response_ollama_to_openai,
@@ -158,11 +160,10 @@ async def generate_a2a_agent_chat_completion(
     """Generate chat completion using A2A protocol"""
     log.info("generate_a2a_agent_chat_completion")
 
-    import requests as req
-
     # Extract agent information
     agent_info = model.get("agent", {})
     agent_endpoint = agent_info.get("endpoint")
+    cloud_run_auth_required = agent_info.get("cloud_run_auth_required", False)
 
     if not agent_endpoint:
         raise Exception("Agent endpoint not configured")
@@ -204,7 +205,12 @@ async def generate_a2a_agent_chat_completion(
         # For streaming, we'll make a non-streaming request and stream the response
         # A2A protocol doesn't necessarily support streaming, so we convert
         try:
-            response = req.post(agent_endpoint, json=jsonrpc_request, timeout=60)
+            response = post_jsonrpc_to_agent(
+                agent_endpoint,
+                jsonrpc_request,
+                cloud_run_auth_required=cloud_run_auth_required,
+                timeout=60,
+            )
             response.raise_for_status()
             response_data = response.json()
 
@@ -281,7 +287,12 @@ async def generate_a2a_agent_chat_completion(
     else:
         # Non-streaming response
         try:
-            response = req.post(agent_endpoint, json=jsonrpc_request, timeout=60)
+            response = post_jsonrpc_to_agent(
+                agent_endpoint,
+                jsonrpc_request,
+                cloud_run_auth_required=cloud_run_auth_required,
+                timeout=60,
+            )
             response.raise_for_status()
             response_data = response.json()
 
@@ -472,6 +483,14 @@ async def generate_chat_completion(
             log.error(f"Agent not found in database: {agent_id}")
             raise Exception("Agent not found")
 
+        if not (
+            user.role == "admin"
+            or agent.user_id == user.id
+            or has_access(user.id, "read", agent.access_control)
+        ):
+            log.error("User %s attempted to access hidden agent %s", user.id, agent_id)
+            raise Exception("Agent not found")
+
         log.info(f"Found agent: {agent.name} at {agent.endpoint or agent.url}")
 
         # Internal-mode agents short-circuit the A2A round-trip and call the
@@ -494,6 +513,9 @@ async def generate_chat_completion(
                 "endpoint": agent.endpoint or agent.url,
                 "capabilities": agent.capabilities,
                 "skills": agent.skills,
+                "access_control": agent.access_control,
+                "user_id": agent.user_id,
+                "cloud_run_auth_required": agent.cloud_run_auth_required,
             }
         }
     elif model_id not in models:

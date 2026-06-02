@@ -125,8 +125,11 @@ class TestChatPrivacy(AbstractIntegrationTest):
 
     def test_pending_user_cannot_read_own_chat_list(self):
         """Pending-role user hits any verified endpoint. `get_verified_user` must 401 before the handler runs."""
+        # Trailing slash required: the list route is "/" and create_url strips
+        # slashes, so without this the request hits the SPA catch-all (200)
+        # instead of the gated API route.
         with mock_current_user_only(_app(), id=self.victim_id, role="pending"):
-            response = self.fast_api_client.get(self.create_url("/"))
+            response = self.fast_api_client.get(self.create_url("/") + "/")
         assert response.status_code == 401
 
     def test_pending_user_blocked_from_read_and_create(self):
@@ -230,10 +233,140 @@ class TestAgentDeployAuthz(AbstractIntegrationTest):
                 self.create_url("/deploy"), json=self._payload()
             )
         assert response.status_code == 200, response.text
+        assert response.json()["access_control"] == {}
         assert self._count_agents() == 1
 
 
-# C. Internal A2A surface safety (public endpoints by A2A spec)
+# C. Agent visibility
+
+
+class TestAgentVisibility(AbstractIntegrationTest):
+    """Attacker = another logged-in user. Goal = discover, use, or mutate
+    another user's private agent. Invariant: local agent access_control is
+    enforced consistently across list/read/write/message routes."""
+
+    BASE_PATH = "/api/v1/agents"
+
+    def setup_method(self):
+        super().setup_method()
+        from open_webui.models.agents import Agents
+
+        self.agents = Agents
+        self.owner_id = "alice"
+        self.attacker_id = "bob"
+        self.private_id = "private-agent-001"
+        self.public_id = "public-agent-001"
+
+        Agents.insert_new_agent(
+            id=self.private_id,
+            name="AlicePrivateAgent",
+            description="private",
+            endpoint="https://example.com/private",
+            url="https://example.com/private",
+            access_control={},
+            user_id=self.owner_id,
+        )
+        Agents.insert_new_agent(
+            id=self.public_id,
+            name="PublicAgent",
+            description="public",
+            endpoint="https://example.com/public",
+            url="https://example.com/public",
+            access_control=None,
+            user_id=self.owner_id,
+        )
+
+    def test_list_hides_private_agents_from_other_users(self):
+        """Bob lists agents. Alice's private agent is omitted; public agent remains."""
+        # The collection route is registered at "/" (trailing slash). create_url
+        # strips slashes, so append one here to match how the frontend calls it
+        # ("/api/v1/agents/") instead of falling through to the SPA catch-all.
+        with mock_current_user_only(_app(), id=self.attacker_id, role="user"):
+            response = self.fast_api_client.get(self.create_url("/") + "/")
+
+        assert response.status_code == 200, response.text
+        agent_ids = {agent["id"] for agent in response.json()}
+        assert self.public_id in agent_ids
+        assert self.private_id not in agent_ids
+
+    def test_owner_can_read_private_agent(self):
+        """Alice can still read her own private agent."""
+        with mock_current_user_only(_app(), id=self.owner_id, role="user"):
+            response = self.fast_api_client.get(self.create_url(f"/{self.private_id}"))
+
+        assert response.status_code == 200, response.text
+        assert response.json()["id"] == self.private_id
+
+    def test_other_user_cannot_read_private_agent(self):
+        """Bob cannot fetch Alice's private agent by ID."""
+        with mock_current_user_only(_app(), id=self.attacker_id, role="user"):
+            response = self.fast_api_client.get(self.create_url(f"/{self.private_id}"))
+
+        assert response.status_code == 401
+
+    def test_other_user_cannot_update_private_agent(self):
+        """Bob cannot mutate Alice's private agent."""
+        with mock_current_user_only(_app(), id=self.attacker_id, role="user"):
+            response = self.fast_api_client.patch(
+                self.create_url(f"/{self.private_id}"),
+                json={"name": "HackedAgent"},
+            )
+
+        assert response.status_code == 401
+        fresh = self.agents.get_agent_by_id(self.private_id)
+        assert fresh.name == "AlicePrivateAgent"
+
+    def test_private_internal_message_route_dispatches_in_process(self, monkeypatch):
+        """Authenticated direct message to a private internal agent avoids its hidden A2A URL."""
+        from open_webui.routers import agents as agents_mod
+
+        internal_id = "private-internal-agent-001"
+        self.agents.insert_new_agent(
+            id=internal_id,
+            name="PrivateInternalAgent",
+            description="private internal",
+            endpoint=f"https://hub.example.com/api/v1/agents/{internal_id}/internal-a2a",
+            url=f"https://hub.example.com/api/v1/agents/{internal_id}/internal-a2a",
+            deployment_mode="internal",
+            system_prompt="Answer directly.",
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            access_control={},
+            user_id=self.owner_id,
+        )
+
+        calls = []
+
+        async def fake_run_agent_turn(*, provider, model, system_prompt, user_message):
+            calls.append(
+                {
+                    "provider": provider,
+                    "model": model,
+                    "system_prompt": system_prompt,
+                    "user_message": user_message,
+                }
+            )
+            return "direct reply"
+
+        def fail_external_post(*args, **kwargs):
+            raise AssertionError("private internal agent made an external A2A call")
+
+        monkeypatch.setattr(agents_mod, "run_agent_turn", fake_run_agent_turn)
+        monkeypatch.setattr(agents_mod, "post_jsonrpc_to_agent", fail_external_post)
+
+        with mock_current_user_only(_app(), id=self.owner_id, role="user"):
+            response = self.fast_api_client.post(
+                self.create_url(f"/{internal_id}/message"),
+                json={"message": "hi"},
+            )
+
+        assert response.status_code == 200, response.text
+        assert calls[0]["user_message"] == "hi"
+        artifacts = response.json()["agent_response"]["result"]["artifacts"]
+        assert artifacts[0]["parts"][0]["text"] == "direct reply"
+
+
+# D. Internal A2A surface safety
 
 
 class TestInternalA2ASafety(AbstractIntegrationTest):
@@ -255,6 +388,7 @@ class TestInternalA2ASafety(AbstractIntegrationTest):
                     "system_prompt": self.SECRET_SYSTEM_PROMPT,
                     "provider": "anthropic",
                     "publish_to_registry": False,
+                    "access_control": None,
                 },
             )
         assert response.status_code == 200, response.text
@@ -275,6 +409,48 @@ class TestInternalA2ASafety(AbstractIntegrationTest):
             "GEMINI_API_KEY",
         ):
             assert forbidden not in body, f"leaked: {forbidden}"
+
+    def test_private_internal_a2a_surface_is_hidden(self):
+        """Default-private internal agents must not expose unauthenticated A2A endpoints."""
+        with mock_current_user_only(_app(), id="root", role="admin"):
+            response = self.fast_api_client.post(
+                self.create_url("/deploy"),
+                json={
+                    "name": "PrivateCanaryBot",
+                    "description": "canary",
+                    "system_prompt": self.SECRET_SYSTEM_PROMPT,
+                    "provider": "anthropic",
+                    "publish_to_registry": False,
+                },
+            )
+        assert response.status_code == 200, response.text
+        private_agent_id = response.json()["id"]
+        assert response.json()["access_control"] == {}
+
+        card_response = self.fast_api_client.get(
+            self.create_url(
+                f"/{private_agent_id}/internal-a2a/.well-known/agent.json"
+            )
+        )
+        assert card_response.status_code == 404
+
+        rpc_response = self.fast_api_client.post(
+            self.create_url(f"/{private_agent_id}/internal-a2a"),
+            json={
+                "jsonrpc": "2.0",
+                "method": "message/send",
+                "params": {
+                    "message": {
+                        "messageId": "x",
+                        "role": "user",
+                        "parts": [{"text": "hi", "type": "text"}],
+                    }
+                },
+                "id": 1,
+            },
+        )
+        assert rpc_response.status_code == 200
+        assert "not found" in rpc_response.json()["error"]["message"].lower()
 
     def test_internal_a2a_error_envelope_never_leaks_system_prompt(self):
         """Malformed and valid-but-no-key JSON-RPC both must omit the stored system prompt."""

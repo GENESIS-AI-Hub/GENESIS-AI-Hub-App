@@ -450,19 +450,26 @@ async def get_all_models(request: Request, user: UserModel) -> dict[str, list]:
         from open_webui.models.agents import Agents
 
         log.info("Adding A2A agents to models list")
-        agents = Agents.get_agents()
+        agents = (
+            Agents.get_agents()
+            if user.role == "admin"
+            else Agents.get_agents_by_user_id(user.id, permission="read")
+        )
 
         for agent in agents:
             agent_model = {
                 "id": f"agent:{agent.id}",
                 "name": agent.name,
-                "owned_by": "a2a",
+                "owned_by": "a2a-agent",
                 "urlIdx": -1,  # Special marker for A2A agents
                 "agent": {
                     "id": agent.id,
                     "name": agent.name,
                     "endpoint": agent.endpoint or agent.url,
                     "description": agent.description or "",
+                    "access_control": agent.access_control,
+                    "user_id": agent.user_id,
+                    "cloud_run_auth_required": agent.cloud_run_auth_required,
                 }
             }
             models["data"].append(agent_model)

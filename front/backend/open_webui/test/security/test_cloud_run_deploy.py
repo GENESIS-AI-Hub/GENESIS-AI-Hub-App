@@ -169,6 +169,9 @@ class TestCloudRunDeployment(AbstractIntegrationTest):
         body = response.json()
         assert body["endpoint"] == "https://cloudbot.us-west1.run.app"
         assert body["deployment_mode"] == "cloud_run"
+        assert body["cloud_run_auth_required"] is True
+        assert body["access_control"] == {}
+        assert call["kwargs"]["allow_unauthenticated"] is False
 
     @pytest.mark.parametrize(
         "provider, expected_dir, expected_secret_env",
@@ -223,6 +226,22 @@ class TestCloudRunDeployment(AbstractIntegrationTest):
 
         secret_refs = call["kwargs"].get("secret_refs") or {}
         assert "ANTHROPIC_API_KEY" in secret_refs
+
+    def test_cloud_run_public_override_allows_unauthenticated(self, monkeypatch):
+        """Admin may explicitly choose a public Cloud Run agent service."""
+        self._patch_helper(
+            monkeypatch, return_url="https://cloudbot.us-west1.run.app"
+        )
+
+        with mock_current_user_only(_app(), id="root", role="admin"):
+            response = self.fast_api_client.post(
+                self.create_url("/deploy"),
+                json=self._payload(cloud_run_public=True),
+            )
+
+        assert response.status_code == 200, response.text
+        assert self.calls[0]["kwargs"]["allow_unauthenticated"] is True
+        assert response.json()["cloud_run_auth_required"] is False
 
     # -- 4. Failure / rollback ---------------------------------------------
 

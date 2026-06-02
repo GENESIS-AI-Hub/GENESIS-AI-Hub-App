@@ -8,6 +8,7 @@ import logging
 
 from open_webui.models.agents import Agents
 from open_webui.constants import ERROR_MESSAGES
+from open_webui.utils.a2a import post_jsonrpc_to_agent
 from starlette.responses import StreamingResponse
 
 router = APIRouter()
@@ -22,7 +23,7 @@ class EmbedAgentResponse(BaseModel):
 @router.get("/agent/{agent_id}", response_model=EmbedAgentResponse)
 async def get_agent_details(agent_id: str):
     agent = Agents.get_agent_by_id(agent_id)
-    if not agent:
+    if not agent or agent.access_control is not None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found",
@@ -46,7 +47,7 @@ async def get_available_agents():
             profile_image_url=agent.profile_image_url
         )
         for agent in agents
-        if agent.is_active
+        if agent.is_active and agent.access_control is None
     ]
 
 class EmbedChatRequest(BaseModel):
@@ -64,7 +65,7 @@ async def embed_chat_completion(form_data: EmbedChatRequest):
     log.info(f"[EMBED] Chat request for agent: {agent_id}")
         
     agent = Agents.get_agent_by_id(agent_id)
-    if not agent:
+    if not agent or agent.access_control is not None:
         log.error(f"[EMBED] Agent not found: {agent_id}")
         raise HTTPException(status_code=404, detail="Agent not found")
         
@@ -112,7 +113,12 @@ async def embed_chat_completion(form_data: EmbedChatRequest):
     log.debug(f"[EMBED] Request payload: {json.dumps(jsonrpc_request)}")
 
     try:
-        response = requests.post(endpoint, json=jsonrpc_request, timeout=60)
+        response = post_jsonrpc_to_agent(
+            endpoint,
+            jsonrpc_request,
+            cloud_run_auth_required=agent.cloud_run_auth_required,
+            timeout=60,
+        )
         log.info(f"[EMBED] Response status: {response.status_code}")
         
         if not response.ok:

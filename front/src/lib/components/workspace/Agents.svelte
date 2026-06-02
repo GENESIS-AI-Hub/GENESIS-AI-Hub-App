@@ -6,22 +6,48 @@
 	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import AccessControl from '$lib/components/workspace/common/AccessControl.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import Plus from '$lib/components/icons/Plus.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
     import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
 
-	const i18n = getContext('i18n');
+	const i18n = getContext('i18n') as any;
+
+	type AccessControlValue = null | {
+		read?: { group_ids?: string[]; user_ids?: string[] };
+		write?: { group_ids?: string[]; user_ids?: string[] };
+	};
+
+	type AgentItem = {
+		id: string;
+		name: string;
+		description?: string;
+		endpoint?: string;
+		url?: string;
+		profile_image_url?: string;
+		image_url?: string;
+		user_id?: string;
+		access_control?: AccessControlValue;
+		model?: string;
+		foundational_model?: string;
+		deployment_mode?: string;
+		capabilities?: Record<string, unknown>;
+	};
 
 	let loaded = false;
-	let agents = [];
-	let filteredAgents = [];
+	let agents: AgentItem[] = [];
+	let filteredAgents: AgentItem[] = [];
 	let searchValue = '';
 
     let showAddModal = false;
     let addUrl = '';
     let addImageUrl = '';
+    let addAccessControl: AccessControlValue = {};
     let addSubmitting = false;
+    let showAccessModal = false;
+    let selectedAgent: AgentItem | null = null;
+    let editAccessControl: AccessControlValue = {};
 
 	$: if (agents) {
 		filteredAgents = agents.filter(
@@ -29,7 +55,7 @@
 		);
 	}
 
-    const fetchAgents = async () => {
+    const fetchAgents = async (): Promise<void> => {
         try {
             const res = await fetch(`${WEBUI_BASE_URL}/api/v1/agents/`, {
                 headers: { 'Authorization': `Bearer ${localStorage.token}` }
@@ -44,7 +70,7 @@
         }
     };
 
-    const addAgent = async () => {
+    const addAgent = async (): Promise<void> => {
         if (!addUrl || addSubmitting) return;
         addSubmitting = true;
         try {
@@ -56,7 +82,8 @@
                 },
                 body: JSON.stringify({
                     agent_url: addUrl,
-                    profile_image_url: addImageUrl || undefined
+                    profile_image_url: addImageUrl || undefined,
+                    access_control: addAccessControl
                 })
             });
 
@@ -65,6 +92,7 @@
                 showAddModal = false;
                 addUrl = '';
                 addImageUrl = '';
+                addAccessControl = {};
                 models.set(await getModels(localStorage.token));
                 await fetchAgents();
             } else {
@@ -78,7 +106,39 @@
         }
     };
 
-    const deleteAgent = async (id) => {
+    const openAccessModal = (agent: AgentItem): void => {
+        selectedAgent = agent;
+        editAccessControl = agent.access_control === null ? null : (agent.access_control ?? {});
+        showAccessModal = true;
+    };
+
+    const updateAgentAccess = async (): Promise<void> => {
+        if (!selectedAgent) return;
+        try {
+            const res = await fetch(`${WEBUI_BASE_URL}/api/v1/agents/${selectedAgent.id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ access_control: editAccessControl })
+            });
+            if (res.ok) {
+                toast.success('Visibility updated');
+                models.set(await getModels(localStorage.token));
+                await fetchAgents();
+                showAccessModal = false;
+                selectedAgent = null;
+            } else {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err.detail || 'Failed to update visibility');
+            }
+        } catch (e) {
+            toast.error('Failed to update visibility');
+        }
+    };
+
+    const deleteAgent = async (id: string): Promise<void> => {
         try {
             const res = await fetch(`${WEBUI_BASE_URL}/api/v1/agents/${id}`, {
                 method: 'DELETE',
@@ -136,10 +196,18 @@
                     />
                 </div>
 
+                <div class="mb-4 px-3 py-2 bg-gray-50 dark:bg-gray-950 rounded-lg">
+                    <AccessControl
+                        bind:accessControl={addAccessControl}
+                        accessRoles={['read', 'write']}
+                        allowPublic={true}
+                    />
+                </div>
+
                 <div class="flex justify-end gap-2">
                     <button
                         class="px-4 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                        on:click={() => { showAddModal = false; addUrl = ''; addImageUrl = ''; }}
+                        on:click={() => { showAddModal = false; addUrl = ''; addImageUrl = ''; addAccessControl = {}; }}
                     >
                         {$i18n.t('Cancel')}
                     </button>
@@ -149,6 +217,37 @@
                         on:click={addAgent}
                     >
                         {addSubmitting ? $i18n.t('Adding...') : $i18n.t('Add')}
+                    </button>
+                </div>
+            </div>
+        </div>
+    {/if}
+
+    {#if showAccessModal && selectedAgent}
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div class="bg-white dark:bg-gray-900 rounded-2xl p-6 w-full max-w-md shadow-xl">
+                <h2 class="text-xl font-semibold mb-4">{$i18n.t('Visibility')}</h2>
+
+                <div class="mb-4 px-3 py-2 bg-gray-50 dark:bg-gray-950 rounded-lg">
+                    <AccessControl
+                        bind:accessControl={editAccessControl}
+                        accessRoles={['read', 'write']}
+                        allowPublic={true}
+                    />
+                </div>
+
+                <div class="flex justify-end gap-2">
+                    <button
+                        class="px-4 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                        on:click={() => { showAccessModal = false; selectedAgent = null; }}
+                    >
+                        {$i18n.t('Cancel')}
+                    </button>
+                    <button
+                        class="px-4 py-2 rounded-lg bg-black dark:bg-white text-white dark:text-black font-medium"
+                        on:click={updateAgentAccess}
+                    >
+                        {$i18n.t('Save')}
                     </button>
                 </div>
             </div>
@@ -209,7 +308,9 @@
 								src={agent.profile_image_url ?? agent.image_url ?? '/static/favicon.png'}
 								alt="agent profile"
 								class=" rounded-full w-full h-auto object-cover"
-                                onError={(e) => e.target.src = '/static/favicon.png'}
+                                on:error={(e) => {
+                                    (e.currentTarget as HTMLImageElement).src = '/static/favicon.png';
+                                }}
 							/>
 						</div>
 					</div>
@@ -221,6 +322,14 @@
                             <!-- Actions -->
                             <div class="flex items-center gap-1">
                                 {#if $user?.role === 'admin' || agent.user_id === $user?.id}
+                                    <Tooltip content={$i18n.t('Visibility')}>
+                                        <button
+                                            class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition"
+                                            on:click={() => openAccessModal(agent)}
+                                        >
+                                            <span class="text-xs">{agent.access_control === null ? $i18n.t('Public') : $i18n.t('Private')}</span>
+                                        </button>
+                                    </Tooltip>
                                     <Tooltip content={$i18n.t('Delete')}>
                                         <button
                                             class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 transition"

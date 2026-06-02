@@ -10,6 +10,7 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
 	import Checkbox from '$lib/components/common/Checkbox.svelte';
+	import AccessControl from '$lib/components/workspace/common/AccessControl.svelte';
 
 	const i18n = getContext('i18n') as any;
 
@@ -28,8 +29,10 @@
 	let provider: 'anthropic' | 'openai' | 'gemini' = 'anthropic';
 	let model = PROVIDER_DEFAULTS['anthropic'];
 	let profileImageUrl = '';
-	let publishToRegistry = true;
+	let accessControl = {};
+	let publishToRegistry = false;
 	let deployToCloudRun = false;
+	let cloudRunPublic = false;
 
 	let modelTouched = false;
 
@@ -51,8 +54,10 @@
 			provider,
 			model: model || undefined,
 			profile_image_url: profileImageUrl.trim() || undefined,
+			access_control: accessControl,
 			publish_to_registry: publishToRegistry,
-			deploy_to_cloud_run: deployToCloudRun
+			deploy_to_cloud_run: deployToCloudRun,
+			cloud_run_public: cloudRunPublic
 		};
 
 		try {
@@ -164,6 +169,14 @@
 				/>
 			</div>
 
+			<div class="px-3 py-2 bg-gray-50 dark:bg-gray-950 rounded-lg">
+				<AccessControl
+					bind:accessControl
+					accessRoles={['read', 'write']}
+					allowPublic={true}
+				/>
+			</div>
+
 			<label class="flex items-center gap-2 mt-1">
 				<Checkbox
 					state={publishToRegistry ? 'checked' : 'unchecked'}
@@ -175,7 +188,10 @@
 			<label class="flex items-start gap-2">
 				<Checkbox
 					state={deployToCloudRun ? 'checked' : 'unchecked'}
-					on:change={(e) => (deployToCloudRun = e.detail === 'checked')}
+					on:change={(e) => {
+						deployToCloudRun = e.detail === 'checked';
+						if (!deployToCloudRun) cloudRunPublic = false;
+					}}
 				/>
 				<span class="text-sm flex flex-col">
 					<span>{$i18n.t('Deploy to dedicated Cloud Run service (recommended for production)')}</span>
@@ -186,6 +202,16 @@
 					</span>
 				</span>
 			</label>
+
+			{#if deployToCloudRun}
+				<label class="flex items-center gap-2">
+					<Checkbox
+						state={cloudRunPublic ? 'checked' : 'unchecked'}
+						on:change={(e) => (cloudRunPublic = e.detail === 'checked')}
+					/>
+					<span class="text-sm">{$i18n.t('Public Cloud Run endpoint')}</span>
+				</label>
+			{/if}
 
 			<div class="flex justify-end gap-2 mt-2">
 				<button

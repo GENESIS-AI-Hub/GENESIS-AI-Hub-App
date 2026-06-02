@@ -77,6 +77,53 @@ def get_project_number(project_id: str) -> Optional[str]:
         return None
 
 
+def default_invoker_members(project_id: str) -> list[str]:
+    """Return default invoker members for private Cloud Run services."""
+    project_number = get_project_number(project_id)
+    if not project_number:
+        return []
+    return [f"serviceAccount:{project_number}-compute@developer.gserviceaccount.com"]
+
+
+def grant_cloud_run_invoker(
+    service_name: str,
+    *,
+    project: str,
+    region: str,
+    members: Iterable[str],
+) -> None:
+    """Grant Cloud Run invoker to each member."""
+    for member in members:
+        bind_cmd = [
+            "gcloud",
+            "run",
+            "services",
+            "add-iam-policy-binding",
+            service_name,
+            f"--member={member}",
+            "--role=roles/run.invoker",
+            f"--region={region}",
+            f"--project={project}",
+        ]
+        try:
+            result = subprocess.run(
+                bind_cmd,
+                shell=_use_shell(),
+                text=True,
+                encoding="utf-8",
+            )
+        except FileNotFoundError as exc:
+            raise CloudRunDeployError(
+                "gcloud is not installed or not on PATH on the hub host."
+            ) from exc
+
+        if result.returncode != 0:
+            raise CloudRunDeployError(
+                "Failed to grant roles/run.invoker on service "
+                f"'{service_name}' to '{member}' (exit {result.returncode})."
+            )
+
+
 def deploy_agent_to_cloud_run(
     service_name: str,
     source_dir: Path,
@@ -87,6 +134,7 @@ def deploy_agent_to_cloud_run(
     memory: str = "1Gi",
     min_instances: int = 1,
     allow_unauthenticated: bool = True,
+    invoker_members: Optional[Iterable[str]] = None,
     secret_refs: Optional[Mapping[str, str]] = None,
     extra_set_env_vars: Optional[Iterable[str]] = None,
 ) -> str:
@@ -169,6 +217,21 @@ def deploy_agent_to_cloud_run(
             f"gcloud run deploy failed for service '{service_name}' (exit {result.returncode})."
         )
 
+    if not allow_unauthenticated:
+        members = list(invoker_members or default_invoker_members(project))
+        if not members:
+            raise CloudRunDeployError(
+                "Private Cloud Run deploy requested, but no invoker service "
+                "account could be inferred. Pass invoker_members or set "
+                "OPENBEAVS_HUB_SERVICE_ACCOUNT."
+            )
+        grant_cloud_run_invoker(
+            service_name,
+            project=project,
+            region=region,
+            members=members,
+        )
+
     return app_url
 
 
@@ -193,6 +256,15 @@ Examples:
         "--allow-unauthenticated",
         action="store_true",
         help="Make the service public (default: requires authentication)",
+    )
+    parser.add_argument(
+        "--invoker-member",
+        action="append",
+        default=[],
+        help=(
+            "IAM member granted roles/run.invoker for private services. "
+            "Can be provided multiple times."
+        ),
     )
     parser.add_argument("--memory", default="1Gi", help="Memory allocation (default: 1Gi)")
     parser.add_argument(
@@ -258,6 +330,7 @@ Examples:
             memory=args.memory,
             min_instances=args.min_instances,
             allow_unauthenticated=args.allow_unauthenticated,
+            invoker_members=args.invoker_member or None,
         )
     except CloudRunDeployError as exc:
         print(f"\n{'='*70}")

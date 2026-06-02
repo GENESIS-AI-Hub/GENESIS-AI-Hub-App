@@ -12,6 +12,11 @@ attempting a real deploy. Without that flag, callers must have
 
 Set ``OPENBEAVS_AGENT_MIN_INSTANCES`` to override the default of one
 warm Cloud Run instance per deployed agent.
+
+Dedicated agent services are deployed private by default. Set
+``OPENBEAVS_HUB_SERVICE_ACCOUNT`` when the hub uses a custom Cloud Run
+runtime service account; otherwise the project default compute service
+account is granted ``roles/run.invoker``.
 """
 
 from __future__ import annotations
@@ -85,6 +90,20 @@ def _agent_min_instances() -> int:
         return 1
 
 
+def _hub_invoker_member() -> str | None:
+    configured_member = os.environ.get("OPENBEAVS_HUB_INVOKER_MEMBER")
+    if configured_member:
+        return configured_member
+
+    service_account = os.environ.get("OPENBEAVS_HUB_SERVICE_ACCOUNT")
+    if service_account:
+        if service_account.startswith("serviceAccount:"):
+            return service_account
+        return f"serviceAccount:{service_account}"
+
+    return None
+
+
 def deploy_provider_agent(
     agent_id: str,
     *,
@@ -92,6 +111,7 @@ def deploy_provider_agent(
     model: str,
     system_prompt: str,
     profile_image_url: str | None = None,
+    allow_unauthenticated: bool = False,
 ) -> str:
     """Provision a Cloud Run service for the given internal agent.
 
@@ -130,12 +150,15 @@ def deploy_provider_agent(
         _PROVIDER_SECRET_DEFAULT_NAME[provider],
     )
     secret_refs = {secret_env_name: f"{secret_name}:latest"}
+    hub_invoker_member = _hub_invoker_member()
+    invoker_members = [hub_invoker_member] if hub_invoker_member else None
 
     return deploy_agent_to_cloud_run(
         _service_name(agent_id),
         source_dir,
         env_vars,
         min_instances=_agent_min_instances(),
+        allow_unauthenticated=allow_unauthenticated,
+        invoker_members=invoker_members,
         secret_refs=secret_refs,
-        allow_unauthenticated=True,
     )

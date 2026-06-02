@@ -803,6 +803,18 @@ A2A_AGENT_CONNECTIONS = PersistentConfig(
     [],
 )
 
+ENABLE_AGENT_REFRESH_SCHEDULER = PersistentConfig(
+    "ENABLE_AGENT_REFRESH_SCHEDULER",
+    "a2a.refresh.scheduler.enable",
+    os.environ.get("ENABLE_AGENT_REFRESH_SCHEDULER", "True").lower() == "true",
+)
+
+AGENT_REFRESH_INTERVAL_MINUTES = PersistentConfig(
+    "AGENT_REFRESH_INTERVAL_MINUTES",
+    "a2a.refresh.interval_minutes",
+    int(os.environ.get("AGENT_REFRESH_INTERVAL_MINUTES", "60")),
+)
+
 ####################################
 # OLLAMA_BASE_URL
 ####################################

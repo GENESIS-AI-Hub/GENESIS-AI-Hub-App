@@ -248,12 +248,16 @@ async def get_all_models(request, user: UserModel = None):
                         "endpoint": agent.endpoint or agent.url,
                         "capabilities": agent.capabilities,
                         "skills": agent.skills,
+                        "access_control": agent.access_control,
+                        "user_id": agent.user_id,
+                        "cloud_run_auth_required": agent.cloud_run_auth_required,
                     },
                     "info": {
                         "meta": {
                             "description": agent.description,
                             "capabilities": agent.capabilities,
                             "profile_image_url": agent.profile_image_url,
+                            "access_control": agent.access_control,
                         }
                     },
                     "tags": [{"name": "agent"}],  # Add AGENT tag
@@ -275,9 +279,19 @@ async def get_all_models(request, user: UserModel = None):
 
 
 def check_model_access(user, model):
-    # A2A agents are always accessible if enabled
     if model.get("owned_by") == "a2a-agent":
-        return True
+        agent = model.get("agent", {})
+        if (
+            user.role == "admin"
+            or agent.get("user_id") == user.id
+            or has_access(
+                user.id,
+                type="read",
+                access_control=agent.get("access_control"),
+            )
+        ):
+            return True
+        raise Exception("Model not found")
 
     if model.get("arena"):
         if not has_access(

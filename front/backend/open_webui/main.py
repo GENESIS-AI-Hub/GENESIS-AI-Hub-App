@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlencode, parse_qs, urlparse
 from pydantic import BaseModel
 from sqlalchemy import text
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from typing import Optional
 from aiocache import cached
@@ -113,6 +114,8 @@ from open_webui.config import (
     # A2A Agent Connections
     ENABLE_A2A_AGENTS,
     A2A_AGENT_CONNECTIONS,
+    ENABLE_AGENT_REFRESH_SCHEDULER,
+    AGENT_REFRESH_INTERVAL_MINUTES,
     # Tool Server Configs
     TOOL_SERVER_CONNECTIONS,
     # Code Execution
@@ -386,6 +389,7 @@ from open_webui.tasks import (
     stop_task,
     list_tasks,
 )  # Import from tasks.py
+from open_webui.utils.agent_refresh import refresh_all_agent_metadata
 
 from open_webui.utils.redis import get_sentinels_from_env
 
@@ -397,6 +401,42 @@ if SAFE_MODE:
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MAIN"])
+
+
+async def run_agent_refresh_job():
+    """Run the scheduled agent metadata refresh job."""
+    try:
+        results = await asyncio.to_thread(refresh_all_agent_metadata)
+        success_count = len([result for result in results if result.success])
+        log.info(
+            "Agent metadata refresh completed: %s/%s succeeded",
+            success_count,
+            len(results),
+        )
+    except Exception:
+        log.exception("Agent metadata refresh job failed")
+
+
+def create_agent_refresh_scheduler(app: FastAPI) -> Optional[AsyncIOScheduler]:
+    """Create the in-process scheduler for agent metadata refresh."""
+    enabled = getattr(app.state.config, "ENABLE_AGENT_REFRESH_SCHEDULER", True)
+    interval_minutes = getattr(
+        app.state.config, "AGENT_REFRESH_INTERVAL_MINUTES", 60
+    )
+    if not enabled or interval_minutes <= 0:
+        return None
+
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(
+        run_agent_refresh_job,
+        "interval",
+        minutes=interval_minutes,
+        id="agent_metadata_refresh",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    return scheduler
 
 
 class SPAStaticFiles(StaticFiles):
@@ -440,8 +480,17 @@ async def lifespan(app: FastAPI):
     if LICENSE_KEY:
         get_license_data(app, LICENSE_KEY)
 
+    agent_refresh_scheduler = create_agent_refresh_scheduler(app)
+    if agent_refresh_scheduler:
+        agent_refresh_scheduler.start()
+        app.state.AGENT_REFRESH_SCHEDULER = agent_refresh_scheduler
+
     asyncio.create_task(periodic_usage_pool_cleanup())
-    yield
+    try:
+        yield
+    finally:
+        if agent_refresh_scheduler and agent_refresh_scheduler.running:
+            agent_refresh_scheduler.shutdown(wait=False)
 
 
 app = FastAPI(
@@ -526,6 +575,8 @@ app.state.config.ENABLE_DIRECT_CONNECTIONS = ENABLE_DIRECT_CONNECTIONS
 
 app.state.config.ENABLE_A2A_AGENTS = ENABLE_A2A_AGENTS
 app.state.config.A2A_AGENT_CONNECTIONS = A2A_AGENT_CONNECTIONS
+app.state.config.ENABLE_AGENT_REFRESH_SCHEDULER = ENABLE_AGENT_REFRESH_SCHEDULER
+app.state.config.AGENT_REFRESH_INTERVAL_MINUTES = AGENT_REFRESH_INTERVAL_MINUTES
 
 app.include_router(registry.router, prefix="/api/v1/registry", tags=["registry"])
 app.include_router(tickets.router, prefix="/api/v1", tags=["tickets"])
@@ -1019,9 +1070,18 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
     def get_filtered_models(models, user):
         filtered_models = []
         for model in models:
-            # Skip filtering for agent models - they're always accessible if enabled
             if model.get("owned_by") == "a2a-agent":
-                filtered_models.append(model)
+                agent = model.get("agent", {})
+                if (
+                    user.role == "admin"
+                    or agent.get("user_id") == user.id
+                    or has_access(
+                        user.id,
+                        type="read",
+                        access_control=agent.get("access_control"),
+                    )
+                ):
+                    filtered_models.append(model)
                 continue
 
             if model.get("arena"):
@@ -1074,8 +1134,11 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
     if enable_a2a:
         try:
             agents = Agents.get_agents()
+            existing_model_ids = {model.get("id") for model in models}
             for agent in agents:
                 model_id = f"agent:{agent.id}"
+                if model_id in existing_model_ids:
+                    continue
                 agent_model = {
                     "id": model_id,
                     "name": agent.name,
@@ -1088,11 +1151,16 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
                         "endpoint": agent.endpoint or agent.url,
                         "capabilities": agent.capabilities,
                         "skills": agent.skills,
+                        "access_control": agent.access_control,
+                        "user_id": agent.user_id,
+                        "cloud_run_auth_required": agent.cloud_run_auth_required,
                     },
                     "info": {
                         "meta": {
                             "description": agent.description,
                             "capabilities": agent.capabilities,
+                            "profile_image_url": agent.profile_image_url,
+                            "access_control": agent.access_control,
                         }
                     },
                     "tags": [{"name": "agent"}, {"name": "a2a"}]

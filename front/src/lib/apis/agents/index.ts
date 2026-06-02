@@ -7,8 +7,10 @@ export type DeployAgentForm = {
 	provider?: 'anthropic' | 'openai' | 'gemini';
 	model?: string;
 	profile_image_url?: string;
+	access_control?: null | object;
 	publish_to_registry?: boolean;
 	deploy_to_cloud_run?: boolean;
+	cloud_run_public?: boolean;
 };
 
 export const deployAgent = async (token: string, form: DeployAgentForm) => {

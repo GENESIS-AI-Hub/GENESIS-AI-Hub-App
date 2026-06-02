@@ -1,11 +1,8 @@
 import uuid
-import json
 from typing import Optional, List, Dict, Any
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
-import requests
 
 from open_webui.models.agents import (
     AgentModel,
@@ -19,7 +16,18 @@ from open_webui.models.agents import (
 from open_webui.models.registry import RegistryAgents
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.access_control import has_access
+from open_webui.utils.a2a import (
+    fetch_agent_card,
+    normalize_agent_base_url,
+    post_jsonrpc_to_agent,
+)
 from open_webui.utils.a2a_runtime import PROVIDER_DEFAULTS, run_agent_turn
+from open_webui.utils.agent_refresh import (
+    AgentRefreshResult,
+    refresh_agent_metadata,
+    refresh_all_agent_metadata,
+)
 
 router = APIRouter()
 
@@ -58,6 +66,55 @@ class SendMessageToAgentForm(BaseModel):
     chat_id: Optional[str] = None
 
 
+def _can_read_agent(user, agent: AgentModel) -> bool:
+    """Return whether a user can read/use an agent."""
+    return (
+        user.role == "admin"
+        or agent.user_id == user.id
+        or has_access(user.id, "read", agent.access_control)
+    )
+
+
+def _can_write_agent(user, agent: AgentModel) -> bool:
+    """Return whether a user can mutate an agent."""
+    return (
+        user.role == "admin"
+        or agent.user_id == user.id
+        or has_access(user.id, "write", agent.access_control)
+    )
+
+
+def _agent_model_payload(agent: AgentModel) -> dict[str, Any]:
+    """Return an agent formatted as an OpenAI-style model."""
+    return {
+        "id": f"agent:{agent.id}",
+        "name": agent.name,
+        "object": "model",
+        "created": agent.created_at,
+        "owned_by": "a2a-agent",
+        "agent": {
+            "id": agent.id,
+            "description": agent.description,
+            "endpoint": agent.endpoint or agent.url,
+            "capabilities": agent.capabilities,
+            "skills": agent.skills,
+            "access_control": agent.access_control,
+            "user_id": agent.user_id,
+            "cloud_run_auth_required": agent.cloud_run_auth_required,
+        },
+        "info": {
+            "meta": {
+                "description": agent.description,
+                "capabilities": agent.capabilities,
+                "profile_image_url": agent.profile_image_url,
+                "access_control": agent.access_control,
+            }
+        },
+        "tags": [{"name": "agent"}, {"name": "a2a"}],
+        "actions": [],
+    }
+
+
 ############################
 # GetAgents
 ############################
@@ -66,7 +123,11 @@ class SendMessageToAgentForm(BaseModel):
 @router.get("/", response_model=List[AgentResponse])
 async def get_agents(user=Depends(get_verified_user)):
     """Get all active agents"""
-    agents = Agents.get_agents()
+    agents = (
+        Agents.get_agents()
+        if user.role == "admin"
+        else Agents.get_agents_by_user_id(user.id, permission="read")
+    )
     return [AgentResponse(**agent.model_dump()) for agent in agents]
 
 
@@ -75,23 +136,6 @@ async def get_all_agents(user=Depends(get_admin_user)):
     """Get all agents including inactive (admin only)"""
     agents = Agents.get_all_agents()
     return agents
-
-
-############################
-# GetAgentById
-############################
-
-
-@router.get("/{agent_id}", response_model=AgentModel)
-async def get_agent_by_id(agent_id: str, user=Depends(get_verified_user)):
-    """Get a specific agent by ID"""
-    agent = Agents.get_agent_by_id(agent_id)
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERROR_MESSAGES.NOT_FOUND,
-        )
-    return agent
 
 
 ############################
@@ -113,6 +157,7 @@ async def register_agent(
         endpoint=form_data.endpoint,
         input_schema=form_data.input_schema,
         output_schema=form_data.output_schema,
+        access_control=form_data.access_control,
         user_id=user.id,
     )
 
@@ -143,19 +188,9 @@ async def register_agent_by_url(
             detail="Agent URL is required",
         )
 
-    # Ensure the URL has proper scheme
-    if not agent_url.startswith(("http://", "https://")):
-        agent_url = "https://" + agent_url
-
-    # Parse the URL and normalize it to just the domain for the well-known file
-    parsed_url = urlparse(agent_url)
-    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
-    well_known_url = f"{base_url}/.well-known/agent.json"
-
     try:
-        response = requests.get(well_known_url, timeout=10)
-        response.raise_for_status()
-        agent_data = response.json()
+        base_url = normalize_agent_base_url(agent_url)
+        agent_data = fetch_agent_card(base_url)
 
         # Extract information from well-known format
         name = agent_data.get("name", "Unknown Agent")
@@ -168,7 +203,11 @@ async def register_agent_by_url(
         default_output_modes = agent_data.get("defaultOutputModes", ["text"])
         
         # Use provided profile image or default to favicon
-        profile_image_url = form_data.profile_image_url or agent_data.get("profileImageUrl") or "/static/favicon.png"
+        profile_image_url = (
+            form_data.profile_image_url
+            or agent_data.get("profileImageUrl")
+            or "/static/favicon.png"
+        )
         
         # Check if agent with this URL already exists
         existing_agent = Agents.get_agent_by_url(url)
@@ -193,6 +232,7 @@ async def register_agent_by_url(
             default_input_modes=default_input_modes,
             default_output_modes=default_output_modes,
             profile_image_url=profile_image_url,
+            access_control=form_data.access_control,
             user_id=user.id,
         )
         
@@ -203,15 +243,12 @@ async def register_agent_by_url(
             detail=ERROR_MESSAGES.DEFAULT(),
         )
         
-    except requests.exceptions.RequestException as e:
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error fetching agent's .well-known/agent.json file: {str(e)}",
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid JSON response from agent: {str(e)}",
         )
 
 
@@ -229,25 +266,74 @@ async def fetch_agent_well_known(agent_url: str, user=Depends(get_verified_user)
             detail="Agent URL is required",
         )
 
-    # Ensure the URL has proper scheme
-    if not agent_url.startswith(("http://", "https://")):
-        agent_url = "https://" + agent_url
-
-    # Parse the URL
-    parsed_url = urlparse(agent_url)
-    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
-    well_known_url = f"{base_url}/.well-known/agent.json"
-
     try:
-        response = requests.get(well_known_url, timeout=10)
-        response.raise_for_status()
-        agent_data = response.json()
-        return agent_data
-    except requests.exceptions.RequestException as e:
+        return fetch_agent_card(normalize_agent_base_url(agent_url))
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error fetching agent's .well-known/agent.json: {str(e)}",
         )
+
+
+############################
+# GetAgentsAsModels
+############################
+
+
+@router.get("/models")
+async def get_agents_as_models(user=Depends(get_verified_user)):
+    """Get all active agents formatted as models for the chat interface"""
+    agents = (
+        Agents.get_agents()
+        if user.role == "admin"
+        else Agents.get_agents_by_user_id(user.id, permission="read")
+    )
+    return {"data": [_agent_model_payload(agent) for agent in agents]}
+
+
+############################
+# RefreshAgents
+############################
+
+
+@router.post("/refresh", response_model=List[AgentRefreshResult])
+async def refresh_agents(user=Depends(get_admin_user)):
+    """Refresh metadata for all active agents from discovery cards."""
+    return refresh_all_agent_metadata()
+
+
+@router.post("/{agent_id}/refresh", response_model=AgentRefreshResult)
+async def refresh_agent(agent_id: str, user=Depends(get_admin_user)):
+    """Refresh one agent's metadata from its discovery card."""
+    agent = Agents.get_agent_by_id(agent_id)
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+    return refresh_agent_metadata(agent)
+
+
+############################
+# GetAgentById
+############################
+
+
+@router.get("/{agent_id}", response_model=AgentModel)
+async def get_agent_by_id(agent_id: str, user=Depends(get_verified_user)):
+    """Get a specific agent by ID"""
+    agent = Agents.get_agent_by_id(agent_id)
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+    if not _can_read_agent(user, agent):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ERROR_MESSAGES.UNAUTHORIZED,
+        )
+    return agent
 
 
 ############################
@@ -269,8 +355,7 @@ async def update_agent(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    # Check if user has permission (owner or admin)
-    if user.role != "admin" and agent.user_id != user.id:
+    if not _can_write_agent(user, agent):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.UNAUTHORIZED,
@@ -300,8 +385,7 @@ async def delete_agent(agent_id: str, user=Depends(get_verified_user)):
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    # Check if user has permission (owner or admin)
-    if user.role != "admin" and agent.user_id != user.id:
+    if not _can_write_agent(user, agent):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.UNAUTHORIZED,
@@ -334,6 +418,42 @@ async def send_message_to_agent(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found",
         )
+    if not _can_read_agent(user, agent):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ERROR_MESSAGES.UNAUTHORIZED,
+        )
+
+    # Build JSON-RPC request following A2A protocol
+    message_id = str(uuid.uuid4())
+    if agent.deployment_mode == "internal":
+        try:
+            reply = await run_agent_turn(
+                provider=agent.provider or "anthropic",
+                model=agent.model
+                or PROVIDER_DEFAULTS.get(agent.provider or "anthropic"),
+                system_prompt=agent.system_prompt or "",
+                user_message=form_data.message,
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with agent: {str(e)}",
+            )
+
+        return {
+            "success": True,
+            "agent_response": {
+                "jsonrpc": "2.0",
+                "result": {
+                    "artifacts": [{"parts": [{"text": reply, "type": "text"}]}]
+                },
+                "id": 1,
+            },
+            "message_id": message_id,
+        }
 
     if not agent.endpoint and not agent.url:
         raise HTTPException(
@@ -343,8 +463,6 @@ async def send_message_to_agent(
 
     endpoint = agent.endpoint or agent.url
 
-    # Build JSON-RPC request following A2A protocol
-    message_id = str(uuid.uuid4())
     jsonrpc_request = {
         "jsonrpc": "2.0",
         "method": "message/send",
@@ -359,8 +477,12 @@ async def send_message_to_agent(
     }
 
     try:
-        # Send request to external agent
-        response = requests.post(endpoint, json=jsonrpc_request, timeout=30)
+        response = post_jsonrpc_to_agent(
+            endpoint,
+            jsonrpc_request,
+            cloud_run_auth_required=agent.cloud_run_auth_required,
+            timeout=30,
+        )
         response.raise_for_status()
 
         response_data = response.json()
@@ -370,53 +492,11 @@ async def send_message_to_agent(
             "message_id": message_id,
         }
 
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Error communicating with agent: {str(e)}",
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing agent response: {str(e)}",
-        )
-
-
-############################
-# GetAgentsAsModels
-############################
-
-
-@router.get("/models")
-async def get_agents_as_models(user=Depends(get_verified_user)):
-    """Get all active agents formatted as models for the chat interface"""
-    agents = Agents.get_agents()
-
-    models = []
-    for agent in agents:
-        model_id = f"agent:{agent.id}"
-        models.append({
-            "id": model_id,
-            "name": agent.name,
-            "object": "model",
-            "created": agent.created_at,
-            "owned_by": "a2a-agent",
-            "agent": {
-                "id": agent.id,
-                "description": agent.description,
-                "endpoint": agent.endpoint or agent.url,
-                "capabilities": agent.capabilities,
-                "skills": agent.skills,
-            },
-            "info": {
-                "meta": {
-                    "description": agent.description,
-                    "capabilities": agent.capabilities,
-                }
-            }
-        })
-
-    return {"data": models}
 
 
 ############################
@@ -484,6 +564,7 @@ async def deploy_agent(
                 model=model,
                 system_prompt=form_data.system_prompt,
                 profile_image_url=form_data.profile_image_url,
+                allow_unauthenticated=form_data.cloud_run_public,
             )
             deployment_mode = "cloud_run"
         except cloud_run_mod.CloudRunDisabled as exc:
@@ -524,6 +605,10 @@ async def deploy_agent(
         model=model,
         deployment_mode=deployment_mode,
         deployment_status="ready",
+        cloud_run_auth_required=(
+            deployment_mode == "cloud_run" and not form_data.cloud_run_public
+        ),
+        access_control=form_data.access_control,
         user_id=user.id,
     )
 
@@ -561,9 +646,13 @@ async def deploy_agent(
 
 @router.get("/{agent_id}/internal-a2a/.well-known/agent.json")
 async def get_internal_agent_card(request: Request, agent_id: str):
-    """A2A discovery card for an internally-hosted agent. Public by A2A spec."""
+    """A2A discovery card for a public internally-hosted agent."""
     agent = Agents.get_agent_by_id(agent_id)
-    if not agent or agent.deployment_mode != "internal":
+    if (
+        not agent
+        or agent.deployment_mode != "internal"
+        or agent.access_control is not None
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Internal agent not found",
@@ -576,7 +665,7 @@ async def get_internal_agent_card(request: Request, agent_id: str):
 
 @router.post("/{agent_id}/internal-a2a")
 async def internal_agent_jsonrpc(agent_id: str, request: Request):
-    """JSON-RPC handler for an internally-hosted agent. Public by A2A spec."""
+    """JSON-RPC handler for a public internally-hosted agent."""
     try:
         body = await request.json()
     except Exception:
@@ -590,7 +679,11 @@ async def internal_agent_jsonrpc(agent_id: str, request: Request):
     method = body.get("method")
 
     agent = Agents.get_agent_by_id(agent_id)
-    if not agent or agent.deployment_mode != "internal":
+    if (
+        not agent
+        or agent.deployment_mode != "internal"
+        or agent.access_control is not None
+    ):
         return {
             "jsonrpc": "2.0",
             "error": {"code": -32004, "message": "Agent not found"},
