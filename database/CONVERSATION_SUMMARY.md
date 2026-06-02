@@ -30,7 +30,7 @@
     - `storage.objectAdmin` - File storage access
     - `secretmanager.secretAccessor` - Secret read access
 
-**Automated Setup Script**: [setup_google_cloud.sh](database/setup_google_cloud.sh)
+**Automated Setup Script**: [setup_google_cloud.sh](./setup_google_cloud.sh)
 - Creates all infrastructure in one command
 - Downloads service account credentials
 - Configures environment files
@@ -58,7 +58,7 @@
 - Users, Auth, Chat, Message, Document, Agent, Tool, Model, Config, etc.
 
 **Data Verification**:
-- Script: [verify_cloud_data.py](database/verify_cloud_data.py)
+- Script: [verify_cloud_data.py](./verify_cloud_data.py)
 - Confirms all data in cloud database
 - Shows table counts and recent records
 
@@ -95,7 +95,7 @@ def verify_password(plain_password, hashed_password):
     return bcrypt.checkpw(password_bytes, hashed_bytes)
 ```
 
-**Documentation**: [BCRYPT_BUG_FIX.md](database/BCRYPT_BUG_FIX.md)
+**Documentation**: [BCRYPT_BUG_FIX.md](./BCRYPT_BUG_FIX.md)
 
 ---
 
@@ -118,7 +118,7 @@ MICROSOFT_OAUTH_SCOPE=openid email profile
 - Automatic account merging by email
 - Works alongside password authentication
 
-**Documentation**: [SSO_CONFIGURATION.md](database/SSO_CONFIGURATION.md)
+**Documentation**: [CLOUD_RUN_MIGRATION_SUMMARY.md](./CLOUD_RUN_MIGRATION_SUMMARY.md) (§4 — Microsoft SSO on Cloud Run)
 
 ---
 
@@ -137,20 +137,20 @@ MICROSOFT_OAUTH_SCOPE=openid email profile
 
 **Implementation**:
 
-1. **Secret Loader Module**: [secret_loader.py](front/backend/open_webui/utils/secret_loader.py)
+1. **Secret Loader Module**: [secret_loader.py](../front/backend/open_webui/utils/secret_loader.py)
    - Unified interface for loading secrets
    - Automatic fallback to environment variables
    - In-memory caching for performance
 
-2. **Environment Integration**: Modified [env.py](front/backend/open_webui/env.py)
+2. **Environment Integration**: Modified [env.py](../front/backend/open_webui/env.py)
    - Added `get_secret()` helper function
    - Loads `DATABASE_URL` from Secret Manager when enabled
 
-3. **Config Integration**: Modified [config.py](front/backend/open_webui/config.py)
+3. **Config Integration**: Modified [config.py](../front/backend/open_webui/config.py)
    - Updated OAuth secrets to use Secret Manager
    - Updated GCS bucket configuration
 
-4. **Automatic Startup**: Modified [start.sh](front/backend/start.sh)
+4. **Automatic Startup**: Modified [start.sh](../front/backend/start.sh)
    - Checks if Cloud SQL Proxy is running
    - Starts proxy automatically if needed
    - Ensures connectivity before app startup
@@ -178,9 +178,9 @@ cd front/backend
 **Cost**: ~$3.50/month for typical usage
 
 **Documentation**:
-- [SECRET_MANAGER_QUICKSTART.md](database/SECRET_MANAGER_QUICKSTART.md)
-- [SECRET_MANAGER_SETUP.md](database/SECRET_MANAGER_SETUP.md)  
-- [SECRET_MANAGER_INTEGRATION.md](database/SECRET_MANAGER_INTEGRATION.md)
+- `SECRET_MANAGER_QUICKSTART.md` (not committed)
+- `SECRET_MANAGER_SETUP.md` (not committed)
+- `SECRET_MANAGER_INTEGRATION.md` (not committed)
 
 ---
 
@@ -314,7 +314,7 @@ MICROSOFT_CLIENT_TENANT_ID=your-tenant-id
 
 ### Start Application:
 ```bash
-cd /path/to/GENESIS-AI-Hub-App/front/backend
+cd /path/to/OpenBeavs/front/backend
 ./start.sh
 ```
 (Automatically starts Cloud SQL Proxy if needed)

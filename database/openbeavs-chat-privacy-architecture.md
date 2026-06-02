@@ -8,21 +8,21 @@
 
 ## **Table of Contents**
 
-1. [Encryption Key Strategy](#bookmark=id.i07wvyjvoa5t)
+1. [Encryption Key Strategy](#1-encryption-key-strategy)
 
-2. [Session Authentication Timing](#bookmark=id.nnuzkpvv3u57)
+2. [Session Authentication Timing](#2-session-authentication-timing)
 
-3. [Guest / Headless Session Handling](#bookmark=id.9nf1eqkw7854)
+3. [Guest / Headless Session Handling](#3-guest--headless-session-handling)
 
-4. [Agent Access Tiers & Step-Up Re-Authentication](#bookmark=id.kge9sul4pfbw)
+4. [Agent Access Tiers & Step-Up Re-Authentication](#4-agent-access-tiers--step-up-re-authentication)
 
-5. [Database Design Implications](#bookmark=id.w45k8wjigxzg)
+5. [Database Design Implications](#5-database-design-implications)
 
-6. [Edge Cases & Failure Modes](#bookmark=id.m4gokm31g8un)
+6. [Edge Cases & Failure Modes](#6-edge-cases--failure-modes)
 
-7. [Summary: Key Design Choices to Implement](#bookmark=id.d7z3e0rd153o)
+7. [Summary: Key Design Choices to Implement](#7-summary-key-design-choices-to-implement)
 
-8. [Resolved & Remaining Open Questions](#bookmark=id.5vyp98lkkjn6)
+8. [Resolved & Remaining Open Questions](#8-resolved--remaining-open-questions)
 
 ---
 

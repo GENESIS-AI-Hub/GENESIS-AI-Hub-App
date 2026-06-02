@@ -2,6 +2,8 @@
 
 This is a simplified guide to get you started quickly. For detailed instructions, see [CLOUD_MIGRATION_GUIDE.md](./CLOUD_MIGRATION_GUIDE.md).
 
+> **Working directory:** Run all commands from the **project root** (`OpenBeavs/`), not from inside `database/`. Scripts are referenced with the `database/` prefix throughout.
+
 ## Prerequisites
 
 - Google Cloud account with billing enabled
@@ -11,7 +13,7 @@ This is a simplified guide to get you started quickly. For detailed instructions
 ## One-Line Setup
 
 ```bash
-./setup_google_cloud.sh
+database/setup_google_cloud.sh
 ```
 
 This automated script will:
@@ -26,7 +28,7 @@ This automated script will:
 ### 1. Run Google Cloud Setup (5 min)
 
 ```bash
-./setup_google_cloud.sh
+database/setup_google_cloud.sh
 ```
 
 Follow the prompts to configure your project.
@@ -45,11 +47,19 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ### 3. Start Cloud SQL Proxy (Terminal 1)
 
+Running `setup_google_cloud.sh` auto-generates `database/start_cloud_sql_proxy.sh` with your connection string already filled in. If you need to create it manually instead:
+
 ```bash
-./start_cloud_sql_proxy.sh
+cp database/start_cloud_sql_proxy.sh.example database/start_cloud_sql_proxy.sh
+# Edit database/start_cloud_sql_proxy.sh — set PROXY_PATH and CONNECTION_STRING
+chmod +x database/start_cloud_sql_proxy.sh
 ```
 
-Keep this running.
+Start the proxy and keep this terminal open:
+
+```bash
+database/start_cloud_sql_proxy.sh
+```
 
 ### 4. Copy Environment Configuration (1 min)
 
@@ -62,7 +72,7 @@ Review and adjust as needed.
 ### 5. Migrate Data (5 min)
 
 ```bash
-./migrate_to_postgres.sh
+database/migrate_to_postgres.sh
 ```
 
 This will:
@@ -144,7 +154,7 @@ cd front/backend && ./start.sh
 
 - **Solution**: Make sure Cloud SQL Proxy is running
   ```bash
-  ./start_cloud_sql_proxy.sh
+  database/start_cloud_sql_proxy.sh
   ```
 
 ### "Permission denied" on GCS

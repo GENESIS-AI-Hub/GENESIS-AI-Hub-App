@@ -26,7 +26,7 @@ communicating with AI agents via the **A2A (Agent-to-Agent) protocol** — JSON-
 ## 2. Repository Layout
 
 ```
-GENESIS-AI-Hub/
+OpenBeavs/
 ├── back/                        # Lightweight prototype FastAPI backend (in-memory)
 │   ├── main.py                  # Routes, models, JSON-RPC handler
 │   ├── requirements.txt
