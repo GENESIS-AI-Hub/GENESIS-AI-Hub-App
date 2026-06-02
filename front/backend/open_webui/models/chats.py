@@ -163,6 +163,7 @@ class ChatTable:
         form_data: ChatForm,
         key_ref: Optional[str] = None,
         session_type: Optional[str] = "authenticated",
+        source_domain: Optional[str] = None,
     ) -> Optional[ChatModel]:
         """
         Insert a new chat record.
@@ -170,6 +171,10 @@ class ChatTable:
         When ENABLE_CHAT_ENCRYPTION is true and key_ref is provided, the chat
         content is stored encrypted (AES-256 envelope encryption). The plaintext
         `chat` column is set to None so only the ciphertext is persisted.
+
+        source_domain: the originating OSU domain FAB (e.g. "library.oregonstate.edu").
+        Stored for cross-domain isolation (§6). Populated from the session JWT's
+        source_domain claim, with fallback to the HTTP Origin/Referer header.
         """
         with get_db() as db:
             id = str(uuid.uuid4())
@@ -199,6 +204,7 @@ class ChatTable:
                 key_ref=stored_key_ref,
                 encrypted_dek=encrypted_dek,
                 content_enc=content_enc,
+                source_domain=source_domain,
             )
             db.add(result)
             db.commit()

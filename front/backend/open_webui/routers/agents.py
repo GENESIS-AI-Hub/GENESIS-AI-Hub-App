@@ -1,3 +1,4 @@
+import hashlib
 import time
 import uuid
 import json
@@ -35,21 +36,75 @@ from open_webui.utils.auth import (
 from open_webui.utils.a2a_runtime import PROVIDER_DEFAULTS, run_agent_turn
 
 
-def _get_elevated_until(request: Request) -> Optional[float]:
-    """Extract the elevated_until timestamp from the request's JWT, if present."""
+def _extract_raw_token(request: Request) -> Optional[str]:
+    """Return the raw bearer token string from the request (header or cookie)."""
     auth_header = request.headers.get("Authorization", "")
     token = auth_header.removeprefix("Bearer ").strip()
     if not token:
         token = request.cookies.get("token", "")
+    return token or None
+
+
+def _extract_request_jwt(request: Request) -> Optional[dict]:
+    """Decode the bearer JWT from the request. Returns None if absent or invalid."""
+    token = _extract_raw_token(request)
     if not token:
         return None
-    data = decode_token(token)
-    return data.get("elevated_until") if data else None
+    return decode_token(token) or None
+
+
+def _get_elevated_until(request: Request) -> Optional[float]:
+    """Extract the elevated_until timestamp from the request's JWT, if present."""
+    payload = _extract_request_jwt(request)
+    return payload.get("elevated_until") if payload else None
+
 
 router = APIRouter()
 
 # Tier ordering: higher index = higher privilege
 _TIER_ORDER = {"public": 0, "authenticated": 1, "privileged": 2}
+
+# ---------------------------------------------------------------------------
+# One-time-use elevated token cache (§6.5 replay attack mitigation)
+# ---------------------------------------------------------------------------
+# Maps SHA-256(raw_token)[:16] → elevated_until epoch float.
+# An entry present in this dict means the elevated token has already been
+# consumed and cannot grant privileged access again.
+#
+# IMPORTANT: This is an in-process, in-memory store. It does NOT survive
+# restarts and is NOT shared across instances. In production (multi-instance
+# Cloud Run) replace with Redis/Memorystore via GCP Memorystore for Redis.
+# Track this work in #142 (elevated token replay — production hardening).
+_used_elevated_tokens: dict[str, float] = {}
+
+
+def _elevated_token_hash(raw_token: str) -> str:
+    """Return a short SHA-256 fingerprint of the raw token string."""
+    return hashlib.sha256(raw_token.encode()).hexdigest()[:32]
+
+
+def _prune_used_elevated_tokens() -> None:
+    """Remove expired entries to bound memory growth. Called lazily on every check."""
+    now = time.time()
+    expired = [k for k, exp in _used_elevated_tokens.items() if exp <= now]
+    for k in expired:
+        del _used_elevated_tokens[k]
+
+
+def _is_elevated_token_consumed(token_hash: str) -> bool:
+    """Return True if this elevated token hash has already been used."""
+    _prune_used_elevated_tokens()
+    return token_hash in _used_elevated_tokens
+
+
+def _consume_elevated_token(token_hash: str, elevated_until: float) -> None:
+    """Mark an elevated token as consumed so it cannot be replayed."""
+    _used_elevated_tokens[token_hash] = elevated_until
+
+
+def _reset_used_elevated_tokens() -> None:
+    """Clear the in-memory cache. Used only in tests."""
+    _used_elevated_tokens.clear()
 
 
 def _get_user_scope(user, elevated_until: Optional[float] = None) -> str:
@@ -79,15 +134,30 @@ def _get_user_scope(user, elevated_until: Optional[float] = None) -> str:
 
 
 def _enforce_tier(
-    agent: AgentModel, user, elevated_until: Optional[float] = None
+    agent: AgentModel,
+    user,
+    elevated_until: Optional[float] = None,
+    raw_token: Optional[str] = None,
+    jwt_payload: Optional[dict] = None,
 ) -> None:
-    """Raise a structured 403 if the user's scope is below the agent's tier."""
+    """Raise a structured 403 if the user's scope is below the agent's tier.
+
+    Priority 7 — One-time-use elevated token (§6.5):
+      When access to a privileged agent is granted via step-up elevation (not
+      via a permanently-privileged role like admin), the elevated token is
+      consumed and cannot be replayed.  Subsequent privileged agent calls
+      require a fresh step-up.
+
+    Priority 5 seam — osu_role (#141):
+      jwt_payload.get("osu_role") is checked against agent.required_role when
+      the JWT carries OSU OIDC claims.  Falls back to user.osu_role (DB field,
+      not yet populated — TODO #141).
+    """
     required = _TIER_ORDER.get(agent.trust_tier or "public", 0)
     user_scope = _get_user_scope(user, elevated_until)
     available = _TIER_ORDER.get(user_scope, 0)
 
     if available < required:
-        # Distinguish "you need to log in" from "you need step-up MFA"
         code = "tier_required" if user_scope == "public" else "step_up_required"
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -98,11 +168,34 @@ def _enforce_tier(
             },
         )
 
-    # Tier passed — check OSU role restriction if set (admin bypasses).
-    # user.osu_role is populated after #141 (OSU OIDC) lands; until then
-    # getattr returns None which correctly blocks role-restricted agents.
+    # One-time-use check: consume the elevated token when granting privileged
+    # access via step-up (not for admins who are permanently privileged).
+    base_scope = _get_user_scope(user, elevated_until=None)
+    if (
+        required >= _TIER_ORDER["privileged"]
+        and base_scope != "privileged"
+        and elevated_until
+        and raw_token
+    ):
+        token_hash = _elevated_token_hash(raw_token)
+        if _is_elevated_token_consumed(token_hash):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "step_up_required",
+                    "required_tier": agent.trust_tier,
+                    "required_role": agent.required_role,
+                },
+            )
+        _consume_elevated_token(token_hash, elevated_until)
+
+    # OSU role restriction check — seam for #141 (OSU OIDC integration).
+    # Reads osu_role from JWT payload when available; falls back to user attribute.
+    # Until #141 lands, jwt_payload.osu_role is None and user.osu_role is None,
+    # so role-restricted agents (required_role set) remain blocked for all
+    # non-admin users.
     if agent.required_role and user is not None and getattr(user, "role", None) != "admin":
-        user_osu_role = getattr(user, "osu_role", None)
+        user_osu_role = (jwt_payload or {}).get("osu_role") or getattr(user, "osu_role", None)
         if user_osu_role != agent.required_role:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -515,7 +608,14 @@ async def send_message_to_agent(
             detail="Agent not found",
         )
 
-    _enforce_tier(agent, user, elevated_until=_get_elevated_until(request))
+    _jwt = _extract_request_jwt(request)
+    _enforce_tier(
+        agent,
+        user,
+        elevated_until=_jwt.get("elevated_until") if _jwt else None,
+        raw_token=_extract_raw_token(request),
+        jwt_payload=_jwt,
+    )
 
     if not agent.endpoint and not agent.url:
         raise HTTPException(
@@ -797,7 +897,14 @@ async def internal_agent_jsonrpc(
         }
 
     try:
-        _enforce_tier(agent, user, elevated_until=_get_elevated_until(request))
+        _jwt2 = _extract_request_jwt(request)
+        _enforce_tier(
+            agent,
+            user,
+            elevated_until=_jwt2.get("elevated_until") if _jwt2 else None,
+            raw_token=_extract_raw_token(request),
+            jwt_payload=_jwt2,
+        )
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {"message": exc.detail}
         return {

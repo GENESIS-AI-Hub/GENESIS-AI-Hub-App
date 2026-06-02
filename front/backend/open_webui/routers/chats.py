@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.access_control import has_permission
+from open_webui.utils.privacy import extract_source_domain
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
@@ -96,9 +97,14 @@ async def get_user_chat_list_by_user_id(
 
 
 @router.post("/new", response_model=Optional[ChatResponse])
-async def create_new_chat(form_data: ChatForm, user=Depends(get_verified_user)):
+async def create_new_chat(request: Request, form_data: ChatForm, user=Depends(get_verified_user)):
     try:
-        chat = Chats.insert_new_chat(user.id, form_data, key_ref=user.key_ref)
+        chat = Chats.insert_new_chat(
+            user.id,
+            form_data,
+            key_ref=user.key_ref,
+            source_domain=extract_source_domain(request),
+        )
         return ChatResponse(**chat.model_dump())
     except Exception as e:
         log.exception(e)
@@ -553,7 +559,7 @@ class CloneForm(BaseModel):
 
 @router.post("/{id}/clone", response_model=Optional[ChatResponse])
 async def clone_chat_by_id(
-    form_data: CloneForm, id: str, user=Depends(get_verified_user)
+    request: Request, form_data: CloneForm, id: str, user=Depends(get_verified_user)
 ):
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
     if chat:
@@ -564,7 +570,12 @@ async def clone_chat_by_id(
             "title": form_data.title if form_data.title else f"Clone of {chat.title}",
         }
 
-        chat = Chats.insert_new_chat(user.id, ChatForm(**{"chat": updated_chat}), key_ref=user.key_ref)
+        chat = Chats.insert_new_chat(
+            user.id,
+            ChatForm(**{"chat": updated_chat}),
+            key_ref=user.key_ref,
+            source_domain=extract_source_domain(request),
+        )
         return ChatResponse(**chat.model_dump())
     else:
         raise HTTPException(
@@ -578,7 +589,7 @@ async def clone_chat_by_id(
 
 
 @router.post("/{id}/clone/shared", response_model=Optional[ChatResponse])
-async def clone_shared_chat_by_id(id: str, user=Depends(get_verified_user)):
+async def clone_shared_chat_by_id(request: Request, id: str, user=Depends(get_verified_user)):
 
     if user.role == "admin":
         chat = Chats.get_chat_by_id(id)
@@ -593,7 +604,12 @@ async def clone_shared_chat_by_id(id: str, user=Depends(get_verified_user)):
             "title": f"Clone of {chat.title}",
         }
 
-        chat = Chats.insert_new_chat(user.id, ChatForm(**{"chat": updated_chat}), key_ref=user.key_ref)
+        chat = Chats.insert_new_chat(
+            user.id,
+            ChatForm(**{"chat": updated_chat}),
+            key_ref=user.key_ref,
+            source_domain=extract_source_domain(request),
+        )
         return ChatResponse(**chat.model_dump())
     else:
         raise HTTPException(

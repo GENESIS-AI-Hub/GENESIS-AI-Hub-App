@@ -1,7 +1,7 @@
 """Unit tests for agent trust tier enforcement.
 
-Tests the _get_user_scope and _enforce_tier helpers in routers/agents.py
-without requiring a database or network — pure logic tests.
+Tests the _get_user_scope, _enforce_tier, and one-time-use elevated token
+helpers in routers/agents.py — pure logic tests with no database or network.
 """
 
 import pytest
@@ -19,7 +19,14 @@ def _make_agent(trust_tier: str, required_role: str | None = None):
 
 
 # Import after defining helpers so import errors surface cleanly
-from open_webui.routers.agents import _get_user_scope, _enforce_tier
+from open_webui.routers.agents import (
+    _get_user_scope,
+    _enforce_tier,
+    _elevated_token_hash,
+    _is_elevated_token_consumed,
+    _consume_elevated_token,
+    _reset_used_elevated_tokens,
+)
 
 
 class TestGetUserScope:
@@ -180,3 +187,171 @@ class TestRequiredRoleMatrix:
         with pytest.raises(HTTPException) as exc_info:
             _enforce_tier(agent, user)
         assert exc_info.value.detail["required_role"] == "student"
+
+
+class TestOsuRoleJwtPayloadSeam:
+    """Priority 5 seam: _enforce_tier reads osu_role from jwt_payload when
+    the JWT carries the claim (post-#141 OSU OIDC), falling back to
+    user.osu_role for backward compat."""
+
+    def test_jwt_payload_osu_role_grants_access(self):
+        """Staff agent allows user when jwt_payload carries osu_role=staff."""
+        agent = _make_agent("authenticated", required_role="staff")
+        user = SimpleNamespace(id="u1", role="user")  # no osu_role attr
+        _enforce_tier(agent, user, jwt_payload={"osu_role": "staff"})
+
+    def test_jwt_payload_osu_role_blocks_wrong_role(self):
+        """Staff agent blocks user when jwt_payload carries osu_role=student."""
+        agent = _make_agent("authenticated", required_role="staff")
+        user = SimpleNamespace(id="u1", role="user")
+        with pytest.raises(HTTPException) as exc_info:
+            _enforce_tier(agent, user, jwt_payload={"osu_role": "student"})
+        assert exc_info.value.detail["code"] == "role_required"
+
+    def test_jwt_payload_takes_precedence_over_user_attr(self):
+        """JWT osu_role overrides user.osu_role when both are present."""
+        agent = _make_agent("authenticated", required_role="staff")
+        user = SimpleNamespace(id="u1", role="user", osu_role="student")
+        _enforce_tier(agent, user, jwt_payload={"osu_role": "staff"})
+
+    def test_no_jwt_payload_falls_back_to_user_attr(self):
+        """Without jwt_payload, falls back to user.osu_role (existing behaviour)."""
+        agent = _make_agent("authenticated", required_role="staff")
+        user = SimpleNamespace(id="u1", role="user", osu_role="staff")
+        _enforce_tier(agent, user, jwt_payload=None)
+
+    def test_empty_jwt_payload_falls_back_to_user_attr(self):
+        """Empty jwt_payload dict falls back to user.osu_role."""
+        agent = _make_agent("authenticated", required_role="student")
+        user = SimpleNamespace(id="u1", role="user", osu_role="student")
+        _enforce_tier(agent, user, jwt_payload={})
+
+
+class TestOneTimeUseElevatedToken:
+    """Priority 7: elevated tokens are consumed on first privileged-agent call.
+
+    §6.5 of the architecture doc requires one-time-use to prevent replay attacks.
+    NOTE: _used_elevated_tokens is in-memory / per-process — not Redis. This is
+    documented as dev-only; production hardening is tracked in #142.
+    """
+
+    def setup_method(self):
+        _reset_used_elevated_tokens()
+
+    def _future(self) -> float:
+        import time
+        return time.time() + 1800
+
+    def test_first_privileged_call_with_elevated_token_succeeds(self):
+        """Initial call to a privileged agent with a valid elevated token passes."""
+        _enforce_tier(
+            _make_agent("privileged"),
+            _make_user("user"),
+            elevated_until=self._future(),
+            raw_token="tok-abc",
+        )
+
+    def test_second_privileged_call_with_same_token_is_blocked(self):
+        """After the token is consumed on the first call, a second call is denied."""
+        token = "tok-replay"
+        elevated_until = self._future()
+        _enforce_tier(
+            _make_agent("privileged"),
+            _make_user("user"),
+            elevated_until=elevated_until,
+            raw_token=token,
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            _enforce_tier(
+                _make_agent("privileged"),
+                _make_user("user"),
+                elevated_until=elevated_until,
+                raw_token=token,
+            )
+        assert exc_info.value.detail["code"] == "step_up_required"
+
+    def test_admin_privileged_access_does_not_consume_token(self):
+        """Admin is permanently privileged; the elevated token is not consumed."""
+        token = "tok-admin"
+        elevated_until = self._future()
+        _enforce_tier(
+            _make_agent("privileged"),
+            _make_user("admin"),
+            elevated_until=elevated_until,
+            raw_token=token,
+        )
+        # Second call with same token should still succeed (token was not consumed)
+        _enforce_tier(
+            _make_agent("privileged"),
+            _make_user("admin"),
+            elevated_until=elevated_until,
+            raw_token=token,
+        )
+
+    def test_token_not_consumed_for_non_privileged_agents(self):
+        """Elevated token is only consumed when the agent requires privileged tier."""
+        token = "tok-auth-agent"
+        elevated_until = self._future()
+        # Call to authenticated-tier agent — should NOT consume the token
+        _enforce_tier(
+            _make_agent("authenticated"),
+            _make_user("user"),
+            elevated_until=elevated_until,
+            raw_token=token,
+        )
+        # Same token can still be used for a privileged agent afterward
+        _enforce_tier(
+            _make_agent("privileged"),
+            _make_user("user"),
+            elevated_until=elevated_until,
+            raw_token=token,
+        )
+
+    def test_different_tokens_are_independent(self):
+        """Two different elevated tokens are tracked independently."""
+        elevated_until = self._future()
+        _enforce_tier(
+            _make_agent("privileged"),
+            _make_user("user"),
+            elevated_until=elevated_until,
+            raw_token="tok-first",
+        )
+        # A different token should still work even though tok-first is consumed
+        _enforce_tier(
+            _make_agent("privileged"),
+            _make_user("user"),
+            elevated_until=elevated_until,
+            raw_token="tok-second",
+        )
+
+    def test_token_without_raw_token_does_not_block_but_still_grants(self):
+        """If raw_token is not passed, one-time-use check is skipped (backwards compat)."""
+        elevated_until = self._future()
+        # Both calls should pass — no raw_token means no consumption tracking
+        _enforce_tier(
+            _make_agent("privileged"),
+            _make_user("user"),
+            elevated_until=elevated_until,
+            raw_token=None,
+        )
+        _enforce_tier(
+            _make_agent("privileged"),
+            _make_user("user"),
+            elevated_until=elevated_until,
+            raw_token=None,
+        )
+
+    def test_consumed_token_hash_helper(self):
+        """Direct unit test of the consume/check helpers."""
+        token_hash = _elevated_token_hash("my-secret-token")
+        assert not _is_elevated_token_consumed(token_hash)
+        _consume_elevated_token(token_hash, self._future())
+        assert _is_elevated_token_consumed(token_hash)
+
+    def test_expired_token_hash_is_pruned(self):
+        """Entries with elapsed elevated_until are cleaned up on the next check."""
+        import time
+        token_hash = _elevated_token_hash("tok-expired")
+        _consume_elevated_token(token_hash, time.time() - 1)  # already expired
+        # After pruning the entry is gone → token appears "unconsumed"
+        assert not _is_elevated_token_consumed(token_hash)
