@@ -85,6 +85,7 @@ def deploy_agent_to_cloud_run(
     project: Optional[str] = None,
     region: Optional[str] = None,
     memory: str = "1Gi",
+    min_instances: int = 1,
     allow_unauthenticated: bool = True,
     secret_refs: Optional[Mapping[str, str]] = None,
     extra_set_env_vars: Optional[Iterable[str]] = None,
@@ -119,6 +120,9 @@ def deploy_agent_to_cloud_run(
     if not source_dir.exists():
         raise CloudRunDeployError(f"Agent source directory not found: {source_dir}")
 
+    if min_instances < 0:
+        raise CloudRunDeployError("min_instances must be greater than or equal to 0.")
+
     set_env_pairs = [f"{k}={v}" for k, v in env_vars.items()]
     set_env_pairs.append(f"APP_URL={app_url}")
     set_env_pairs.append(f"HOST_OVERRIDE={app_url}")
@@ -135,6 +139,7 @@ def deploy_agent_to_cloud_run(
         f"--region={region}",
         f"--project={project}",
         f"--memory={memory}",
+        f"--min-instances={min_instances}",
         f"--set-env-vars={','.join(set_env_pairs)}",
     ]
 
@@ -190,6 +195,15 @@ Examples:
         help="Make the service public (default: requires authentication)",
     )
     parser.add_argument("--memory", default="1Gi", help="Memory allocation (default: 1Gi)")
+    parser.add_argument(
+        "--min-instances",
+        type=int,
+        default=1,
+        help=(
+            "Minimum warm Cloud Run instances to keep "
+            "(default: 1; use 0 to allow scale-to-zero)"
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -223,6 +237,7 @@ Examples:
     print(f"Project:        {project}")
     print(f"Region:         {region}")
     print(f"Memory:         {args.memory}")
+    print(f"Min Instances:  {args.min_instances}")
     print(f"Authentication: {'Public' if args.allow_unauthenticated else 'IAM Required'}")
     print(f"Source:         {agent_dir}")
     print(f"{'='*70}\n")
@@ -241,6 +256,7 @@ Examples:
             project=project,
             region=region,
             memory=args.memory,
+            min_instances=args.min_instances,
             allow_unauthenticated=args.allow_unauthenticated,
         )
     except CloudRunDeployError as exc:

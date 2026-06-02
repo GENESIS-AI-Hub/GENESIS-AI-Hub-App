@@ -9,6 +9,9 @@ Set ``OPENBEAVS_CLOUD_RUN_DISABLED=1`` on dev/no-creds installs to make
 the router fall back to the existing internal-mode handler instead of
 attempting a real deploy. Without that flag, callers must have
 ``gcloud`` on PATH and a default project configured.
+
+Set ``OPENBEAVS_AGENT_MIN_INSTANCES`` to override the default of one
+warm Cloud Run instance per deployed agent.
 """
 
 from __future__ import annotations
@@ -73,6 +76,15 @@ def _cloud_run_deploy_error_cls():
     return _load_agents_module().CloudRunDeployError
 
 
+def _agent_min_instances() -> int:
+    """Return the configured Cloud Run minimum instance count for agents."""
+    raw_value = os.environ.get("OPENBEAVS_AGENT_MIN_INSTANCES", "1")
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        return 1
+
+
 def deploy_provider_agent(
     agent_id: str,
     *,
@@ -123,6 +135,7 @@ def deploy_provider_agent(
         _service_name(agent_id),
         source_dir,
         env_vars,
+        min_instances=_agent_min_instances(),
         secret_refs=secret_refs,
         allow_unauthenticated=True,
     )

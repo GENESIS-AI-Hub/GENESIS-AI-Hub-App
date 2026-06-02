@@ -1,0 +1,143 @@
+1. Project Arc
+Original problem:
+The original problem was to create a centralized hub for OSU agents and Agentic workflows to live - keeping a single source of truth and everything collected. It should be easy for anyone - researchers, faculty, students - to make a specialized agent for their field. The goal was to build, deploy, and get real users and user feedback on an app that was exactly like this.
+
+Significant milestones:
+OpenWebUI being adopted and hosted live
+Successful E2E test deployed on a .oregonstate.edu website
+First A2A agent test
+Where project is today:
+OpenBeavs is an AI agent hub built for Oregon State University, now in its third and final capstone term (CS 463, Spring 2026). It gives OSU community members a single authenticated workspace to browse, install, and chat with specialized AI agents over Google's A2A (Agent-to-Agent) protocol.
+
+  Functionality delivered:
+
+  Layer: SvelteKit 2 + FastAPI web app
+  Status: Deployed on GCP Cloud Run
+  ────────────────────────────────────────
+  Layer: OSU Microsoft SSO sign-in
+  Status: Partially working — still navigating OSU IT approval pipeline
+  ────────────────────────────────────────
+  Layer: RBAC (Admin / User / Viewer)
+  Status: Delivered via OpenWebUI integration
+  ────────────────────────────────────────
+  Layer: Agent registry / marketplace
+  Status: Working — agents discoverable and installable
+  ────────────────────────────────────────
+  Layer: OSU RAG pipeline (crawls *.oregonstate.edu, Firestore vector store)
+  Status: Functional but incomplete — crawler blocked by self-imposed rate limiting this sprint
+  ────────────────────────────────────────
+  Layer: SQLite → PostgreSQL migration (GCP-hosted)
+  Status: Completed in Winter term
+  ────────────────────────────────────────
+  Layer: CI/CD (GitHub → GCP Cloud Run)
+  Status: In progress
+  ────────────────────────────────────────
+  Layer: Per-user chat encryption + guest session handling
+  Status: In progress (Sprint 11/12)
+  ────────────────────────────────────────
+  Layer: Context-aware agent routing (FR7)
+  Status: In progress
+  ────────────────────────────────────────
+  Layer: Cross-agent conversation context sharing (FR8)
+  Status: In progress
+  ────────────────────────────────────────
+  Layer: Agent deploy-it-yourself view (for developers)
+  Status: In progress
+  ────────────────────────────────────────
+  Layer: Version control / rollback for agents
+  Status: Not started
+  ────────────────────────────────────────
+  Layer: Feedback / issue reporting (FR6)
+  Status: Completed
+  ────────────────────────────────────────
+  Layer: 10,000 concurrent-user scalability
+  Status: Not tested
+
+Deployment state: Live at openbeavs-deploy-test-716080272371.us-west1.run.app. A previous production URL (genesis.dev.oregonstate.edu) was used during stakeholder demos in Winter. This URL needs to be changed to beavsbuild.oregonstate.edu, but waiting on Project Partner to get the new URL to begin switching over.
+
+Known gaps vs. original vision: Full OSU SSO lock-in (the intended security cornerstone) is not yet production-ready. Need to contact UIT in order to scope for all ONID accounts.
+Honest assessment:
+Honestly the biggest change was our delayed work on the timeline. By the middle of the second term (Sprint 7, roughly) we were supposed to be scaling to users and getting real user feedback. What actually ended up happening was that we were just then getting to actually push to live, but were still missing database persistence, a url to live on, and OSU UIT was not helping our ONID SSO. Additionally, the project would have been completed much faster had we not lost a member in the third term and had group members more on board time-commitment wise, as work was not split equally.
+Reflection:
+The outcome expectations were to be getting with users as a New Product. We fell slightly short of that, but ended up with a fully deployed full-stack system that is ready to scale.
+
+2. Narrative Coherence
+Successes:
+Deploying a persistent user and agent registry database
+E2E testing fully deployed, being able to see the app work from a .oregonstate.edu website
+Getting ONID SSO to work for user login
+Challenges:
+Team commitment
+Losing a member in the third term
+Blockers from UIT (domains, ONID SSO)
+
+Patterns
+Lack of work being completed
+Lack of time being put into the project
+Bursts of work being completed at the date end of a sprint
+Lagging behind set dates and timelines
+What changed term-to-term and triggers
+Fall
+NA
+Winter
+Momentum was lost and hard to get back. Commits and merges dropped. The trigger was time away and some de-motivation from the team.
+Spring
+Momentum found its place in between Fall’s high and Winter’s low, setting us at a medium. Additionally, the Project partner got much more involved and started asking for more proof of work, which motivated us to actually develop and work hard.
+
+3. Causal Analysis
+For your most significant successes and challenges, go beyond “what happened” to explain why. Ground your analysis in specific decisions, behaviors, or circumstances. Examples of useful causal frames:
+A technical decision that paid off or created debt later
+A team process that helped (or hurt) velocity over time
+An external constraint (partner availability, scope, tooling) that shaped outcomes
+A moment where the team adapted well (or didn’t) to new information
+4. Technical Growth
+Describe how your team’s technical approach and engineering practices evolved across the three terms. Include:
+Key architecture, tooling, or process decisions and how they held up
+What the team got better at technically (testing, code review, CI/CD, documentation, etc.)
+Any technical debt accumulated, and how much of it was intentional
+What you would do differently from a technical standpoint if starting over
+
+5. Team Dynamics
+Roles evolved from loose shared responsibility into clearer, but mostly informal, ownership. In the first term, the team treated most of the project as collective work: everyone understood the overall goal of building an OSU AI agent hub, but ownership for specific systems was not always explicit. Over time, ownership clarified because the project demanded it. Backend, deployment, frontend integration, documentation, and agent/A2A work naturally separated into different areas of responsibility. This helped the project move forward, but because the shift happened organically instead of through a formal plan, the workload did not always feel evenly distributed.
+
+Communication and coordination worked best when the team had a concrete deliverable in front of it. Examples include getting OpenWebUI deployed, proving A2A communication worked, showing the app on an Oregon State domain, and preparing stakeholder demos. Those targets made it easier to coordinate because the next step was visible and testable. Friction came from vague or dependency-heavy work, especially SSO approval, domain setup, scalability planning, and unfinished sprint tasks. When tasks were not broken into small, owned pieces, progress tended to happen in bursts near sprint deadlines rather than steadily throughout the sprint.
+
+Conflict and disagreement were handled more through adaptation than through formal resolution. The team did not have many major technical arguments, but there was friction around uneven time commitment, delayed work, unclear ownership, and external blockers from OSU UIT. Instead of always addressing those issues directly early on, the team often worked around them: members with more availability or more context picked up urgent tasks so the project could keep moving. That approach was constructive in the short term because it helped us deliver, but it also created pressure later because some accountability problems were not discussed soon enough.
+
+The team learned that collaboration needs visible ownership, regular proof of progress, and earlier escalation of blockers. At the start, we underestimated how much coordination a full-stack deployed product would require, especially with A2A agents, authentication, databases, and Cloud Run deployment all moving at once. By Spring term, we understood that motivation improved when the project partner asked for concrete proof of work and when tasks were tied to demos or working features. If we were starting over, we would define ownership earlier, check progress more frequently, and raise blockers sooner instead of waiting until the end of a sprint.
+
+
+6. Evidence Examples
+
+Artifact 1: front/A2A_IMPLEMENTATION_SUMMARY.md
+This document directly describes the A2A integration inside OpenWebUI. It lists the model registry, agent router, config endpoints, chat-completion routing, and database persistence as the main components of the implementation. It also documents the critical fix that allowed registered agents to appear in the model list. This supports the narrative that the team moved from a general hub idea to a working A2A agent system that users could actually select and chat with.
+
+Artifact 2: cloudbuild.yaml and docs/developAndDeploy.md
+These files show the deployment workflow the team built around Google Cloud Run. cloudbuild.yaml defines the actual steps: pull a cache image, build the unified frontend/backend Docker image, push it to Artifact Registry, and deploy it to the openbeavs-deploy-test Cloud Run service. docs/developAndDeploy.md explains the same process in team-facing language and says that main-branch merges trigger the Cloud Build pipeline. Together, they support the narrative that the project moved from local development toward repeatable deployment.
+
+Artifact 3: front/backend/open_webui/internal/migrations/019_add_agents.py through 023_add_agent_deployment_fields.py
+These migrations show the project becoming more persistent and product-like over time. Migration 019 creates the agent table, migration 020 creates the registry_agent table, migration 021 adds foundational_model, migration 022 adds profile_image_url, and migration 023 adds system prompt, provider, model, deployment mode, and deployment status fields. This reinforces the project arc from a prototype idea toward a real hub where agents can be registered, stored, displayed, and deployed.
+
+Artifact 4: .github/workflows/ci.yml
+The GitHub Actions workflow is a lightweight example of the team's testing and process maturity. It runs Vitest for the frontend and runs Ruff plus pytest for the lightweight prototype backend in back/. It also shows an honest limitation: despite the job name mentioning frontend lint and type checks, the workflow currently only runs the frontend test script, and it does not run the production OpenWebUI backend's broader security/regression tests. This supports the narrative that CI/CD improved, but was still incomplete.
+
+7. Lessons Learned
+James
+
+Lesson 1: Set boundaries early and protect personal reset time.
+For most of this project, I often worked late, handled odd-hour fixes, or did last-minute edits, including work on Sunday nights. Even when the work got done, that pattern made it hard to fully rest or feel at peace outside the project. Going forward, I want to set clearer limits for myself, especially around weekends. At minimum, I want to avoid being responsive after 4 PM on Sundays so I can protect time to reset before the week starts.
+
+Lesson 2: Be upfront when team problems appear.
+Throughout the project, responsibility and workload were not always evenly split. I tried to stay friendly and avoid confrontation, but being nice about the problem did not make it go away or create actionable change. In future group projects or professional settings, I will raise concerns earlier, be more direct about uneven work, and ask for specific changes instead of waiting until the problem becomes normal.
+
+Lesson 3: Ask for more structure from the project partner and do not absorb every gap.
+Our project partner was involved, but the team still had to decide how to break down the work, assign ownership, motivate progress, and turn feature requests into a roadmap. Because of that, I became an informal tech lead while also leading sprints and contributing as a developer. In future projects, I will ask project partners for clearer priorities, acceptance criteria, and decision support earlier. I also want to become more comfortable trusting other people to step up instead of taking every unresolved problem onto my own plate.
+
+Lesson 4: Turn ambiguity into small, testable milestones as early as possible.
+The original idea was broad: build an OSU AI agent hub with authentication, agent discovery, A2A communication, deployment, persistence, and eventually real users. When the goal stayed too broad, it was easy for progress to feel vague until a demo or deadline forced decisions. Going forward, I will break large ideas into visible milestones earlier, with a clear owner and a concrete test for whether each piece works. That would help prevent sprint-end bursts and make progress easier to measure.
+
+Lesson 5: Prioritize a thin end-to-end product slice before expanding scope.
+The moments that mattered most were when we could actually show the system working: OpenWebUI deployed, the app reachable on a live URL, A2A agents registered, and chat flowing through the hub. Some other work, like scalability, advanced routing, and full SSO lock-in, stayed incomplete because the project had many moving parts. In future projects, I would push for the smallest complete user path first, then add depth once the core flow is stable. A working vertical slice creates confidence and makes later decisions easier.
+
+Lesson 6: Document decisions while they are happening, not after the fact.
+By the end of the project, there were many important technical and process decisions to explain: why we used OpenWebUI, how A2A agents became models, how deployment moved to Cloud Run, and why some original goals remained incomplete. Reconstructing that story later is harder than documenting it when the decision is fresh. In future work, I will keep short decision notes, link important PRs or issues, and record why major tradeoffs were made. That will help with handoff, retrospectives, and defending technical choices later.

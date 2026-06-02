@@ -88,6 +88,7 @@ gcloud run deploy "$SERVICE_NAME" \
     --execution-environment="gen2" \
     --memory="8Gi" \
     --cpu="4" \
+    --min-instances=1 \
     --port=8080 \
     --timeout=600 \
     --set-env-vars="HOST=0.0.0.0,WEBUI_PORT=8080,PYTHONUNBUFFERED=1,WEBUI_AUTH=True,DATA_DIR=/tmp,HF_HOME=/tmp/cache,SENTENCE_TRANSFORMERS_HOME=/tmp/cache,ENABLE_RAG_WEB_SEARCH=False,ENABLE_RAG_LOCAL_DOCS=False,HF_HUB_DISABLE_PROGRESS_BARS=1"

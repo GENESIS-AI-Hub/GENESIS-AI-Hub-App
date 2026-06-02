@@ -53,6 +53,7 @@ gcloud run deploy $BACKEND_SERVICE_NAME \
   --platform managed \
   --region $GCP_REGION \
   --project $GCP_PROJECT_ID \
+  --min-instances 1 \
   --allow-unauthenticated
 
 # Get the backend URL
@@ -77,6 +78,7 @@ gcloud run deploy $FRONTEND_SERVICE_NAME \
   --platform managed \
   --region $GCP_REGION \
   --project $GCP_PROJECT_ID \
+  --min-instances 1 \
   --allow-unauthenticated
 
 echo "Frontend deployed!"

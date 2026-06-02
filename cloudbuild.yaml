@@ -48,6 +48,7 @@ steps:
       - '--execution-environment=gen2'
       - '--memory=8Gi'
       - '--cpu=4'
+      - '--min-instances=1'
       - '--port=8080'
       - '--timeout=600'
       - '--set-env-vars=HOST=0.0.0.0,WEBUI_SECRET_KEY=change-me-in-prod,OFFLINE_MODE=true,ENV=prod,RAG_EMBEDDING_MODEL_AUTO_UPDATE=false,RAG_RERANKING_MODEL_AUTO_UPDATE=false,BYPASS_EMBEDDING_AND_RETRIEVAL=true,BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=true,WHISPER_MODEL_AUTO_UPDATE=false,OPENBEAVS_CLOUD_RUN_DISABLED=1'
