@@ -16,6 +16,8 @@
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
 	import ArrowUpCircle from '$lib/components/icons/ArrowUpCircle.svelte';
 	import MenuLines from '$lib/components/icons/MenuLines.svelte';
+	import TrustShieldBadge from '$lib/components/common/TrustShieldBadge.svelte';
+	import ProvisionalAgentModal from '$lib/components/common/ProvisionalAgentModal.svelte';
 
 	// ── Props ─────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,9 @@
 		name: string;
 		description: string | null;
 		profile_image_url: string | null;
+		trust_tier: 'public' | 'authenticated' | 'privileged' | null;
+		deployment_mode: string | null;
+		endpoint: string | null;
 	};
 
 	type ChatMessage = {
@@ -36,6 +41,7 @@
 		content: string;
 		routed_to: string | null;
 		agent_name: string | null;
+		trust_tier: 'public' | 'authenticated' | 'privileged' | null;
 	};
 
 	// ── State ──────────────────────────────────────────────────────────────────
@@ -55,6 +61,12 @@
 
 	// Targeted agent — set when user clicks a quick-launch chip (#140)
 	let targetedAgent: InstalledAgent | null = null;
+
+	// Provisional warning modal state
+	let provisionalModal: { open: boolean; pendingAgent: InstalledAgent | null } = {
+		open: false,
+		pendingAgent: null
+	};
 
 	// ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -130,7 +142,8 @@
 						role: 'assistant',
 						content: result.response,
 						routed_to: result.routed_to,
-						agent_name: result.agent_name
+						agent_name: result.agent_name,
+						trust_tier: result.routed_to ? (targetedAgent?.trust_tier ?? null) : null
 					}
 				];
 
@@ -178,11 +191,39 @@
 		}
 	}
 
-	// #140: select or deselect a quick-launch agent
+	// #140: select or deselect a quick-launch agent — show warning for provisional agents
 	function toggleTargetAgent(agent: InstalledAgent) {
-		targetedAgent = targetedAgent?.id === agent.id ? null : agent;
+		if (targetedAgent?.id === agent.id) {
+			targetedAgent = null;
+			return;
+		}
+		const isExternal = !!agent.endpoint && agent.deployment_mode !== 'internal';
+		const isProvisional = isExternal && agent.trust_tier !== 'privileged';
+		if (isProvisional) {
+			provisionalModal = { open: true, pendingAgent: agent };
+		} else {
+			targetedAgent = agent;
+		}
+	}
+
+	function confirmProvisional() {
+		if (provisionalModal.pendingAgent) {
+			targetedAgent = provisionalModal.pendingAgent;
+		}
+		provisionalModal = { open: false, pendingAgent: null };
+	}
+
+	function cancelProvisional() {
+		provisionalModal = { open: false, pendingAgent: null };
 	}
 </script>
+
+<ProvisionalAgentModal
+	open={provisionalModal.open}
+	agentName={provisionalModal.pendingAgent?.name ?? ''}
+	onConfirm={confirmProvisional}
+	onCancel={cancelProvisional}
+/>
 
 <!-- ── Layout ──────────────────────────────────────────────────────────────── -->
 <div
@@ -243,7 +284,7 @@
 
 					<!-- #138: routing indicator for assistant messages -->
 					{#if msg.role === 'assistant' && msg.agent_name}
-						<div class="flex items-center gap-1.5 px-1">
+						<div class="flex items-center gap-1.5 px-1 flex-wrap">
 							<span
 								class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium
 								       bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
@@ -254,6 +295,9 @@
 								</svg>
 								Routed to {msg.agent_name}
 							</span>
+							{#if msg.trust_tier}
+								<TrustShieldBadge tier={msg.trust_tier} />
+							{/if}
 						</div>
 					{/if}
 
@@ -317,6 +361,7 @@
 	{#if !agentsLoading && installedAgents.length > 0}
 		<div class="flex flex-wrap gap-2 mb-3">
 			{#each installedAgents as agent (agent.id)}
+				{@const isExternal = !!agent.endpoint && agent.deployment_mode !== 'internal'}
 				<button
 					class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium
 					       border transition-colors
@@ -335,6 +380,11 @@
 						</svg>
 					{/if}
 					{agent.name}
+					{#if isExternal}
+						<span class="ml-0.5 text-[9px] font-semibold {agent.trust_tier === 'privileged' ? 'text-green-500' : 'text-red-400'}">
+							{agent.trust_tier === 'privileged' ? '✅' : '⚠️'}
+						</span>
+					{/if}
 				</button>
 			{/each}
 		</div>

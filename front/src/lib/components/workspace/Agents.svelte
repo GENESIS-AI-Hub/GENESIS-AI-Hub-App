@@ -15,6 +15,8 @@
 		clearRegistry
 	} from '$lib/apis/registry';
 
+	import { updateAgent } from '$lib/apis/agents';
+
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import Plus from '$lib/components/icons/Plus.svelte';
@@ -106,6 +108,16 @@
 		}
 	};
 
+
+	const setLocalAgentTier = async (id: string, tier: 'public' | 'privileged') => {
+		try {
+			await updateAgent(localStorage.token as string, id, { trust_tier: tier });
+			toast.success(tier === 'privileged' ? 'Agent marked as Verified' : 'Agent marked as Provisional');
+			await fetchLocalAgents();
+		} catch {
+			toast.error('Failed to update trust status');
+		}
+	};
 
 	let showAddModal = false;
 	let addUrl = '';
@@ -231,6 +243,24 @@
 		await refreshAgents();
 		loaded = true;
 	});
+
+	const handleAddAgent = async () => {
+		if (!addUrl || addSubmitting) return;
+		addSubmitting = true;
+		try {
+			await submitRegistryAgent(localStorage.token as string, addUrl.trim(), addImageUrl.trim() || undefined);
+			toast.success($i18n.t('Agent added to registry'));
+			showAddModal = false;
+			addUrl = '';
+			addImageUrl = '';
+			await refreshAgents();
+			models.set(await getModels(localStorage.token as string));
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : $i18n.t('Failed to add agent'));
+		} finally {
+			addSubmitting = false;
+		}
+	};
 
 	function onImageError(e: Event) {
 		(e.target as HTMLImageElement).src = '/static/favicon.png';
@@ -561,6 +591,25 @@
 									
 									<!-- Actions -->
 									<div class="flex items-center gap-1">
+										{#if $user?.role === 'admin' && agent.endpoint && agent.deployment_mode !== 'internal'}
+											{#if agent.trust_tier === 'privileged'}
+												<Tooltip content="Revoke verification (mark Provisional)">
+													<button
+														class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 transition text-xs font-bold"
+														on:click={() => setLocalAgentTier(agent.id, 'public')}
+														aria-label="Revoke verification"
+													>⚠️</button>
+												</Tooltip>
+											{:else}
+												<Tooltip content="Mark as Verified">
+													<button
+														class="p-1.5 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 text-green-600 transition text-xs font-bold"
+														on:click={() => setLocalAgentTier(agent.id, 'privileged')}
+														aria-label="Mark as Verified"
+													>✅</button>
+												</Tooltip>
+											{/if}
+										{/if}
 										{#if $user?.role === 'admin' || agent.user_id === $user?.id}
 											<Tooltip content={$i18n.t('Delete')}>
 												<button
@@ -579,10 +628,12 @@
 								</div>
 								
 								<div class="mt-2 flex flex-wrap gap-1">
-									<TrustShieldBadge
-										tier={agent.trust_tier ?? 'public'}
-										locked={!canAccessAgent(agent)}
-									/>
+									{#if agent.endpoint && agent.deployment_mode !== 'internal'}
+										<TrustShieldBadge
+											tier={agent.trust_tier ?? 'public'}
+											locked={!canAccessAgent(agent)}
+										/>
+									{/if}
 									{#if agent.model || agent.foundational_model}
 										<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
 											{agent.model ?? agent.foundational_model}
@@ -633,8 +684,8 @@
 						title="Your account does not have access to this agent"
 						role="button"
 						tabindex="0"
-						on:click={() => installAgent(agent)}
-						on:keydown={(e) => e.key === 'Enter' && installAgent(agent)}
+						on:click={() => handleInstall(agent)}
+						on:keydown={(e) => e.key === 'Enter' && handleInstall(agent)}
 					>
 						<div class="flex flex-col items-center gap-1 text-gray-500 dark:text-gray-400">
 							<span class="text-2xl">🔐</span>
