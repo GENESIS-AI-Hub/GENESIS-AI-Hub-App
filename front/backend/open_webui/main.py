@@ -368,6 +368,7 @@ from open_webui.utils.chat import (
     generate_chat_completion as chat_completion_handler,
     chat_completed as chat_completed_handler,
     chat_action as chat_action_handler,
+    periodic_guest_chat_purge,
 )
 from open_webui.utils.middleware import process_chat_payload, process_chat_response
 from open_webui.utils.access_control import has_access
@@ -486,6 +487,7 @@ async def lifespan(app: FastAPI):
     _seed_chris_agent()
 
     asyncio.create_task(periodic_usage_pool_cleanup())
+    asyncio.create_task(periodic_guest_chat_purge())
     yield
 
 

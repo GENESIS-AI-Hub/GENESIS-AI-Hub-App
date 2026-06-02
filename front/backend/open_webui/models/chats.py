@@ -61,6 +61,12 @@ class Chat(Base):
     # key_version: KMS key version used to wrap encrypted_dek. Allows targeted
     # re-encryption jobs after key rotation without touching all records.
     key_version = Column(String, nullable=True)
+    # source_domain: originating OSU domain FAB (e.g. "library.oregonstate.edu").
+    # Used for cross-domain chat isolation and opt-in sharing (architecture §6).
+    source_domain = Column(String, nullable=True)
+    # agent_tier: highest-access tier agent touched in this conversation.
+    # Recorded so audit logs and PII scrubber jobs know the sensitivity level.
+    agent_tier = Column(String, nullable=True)
 
 
 class ChatModel(BaseModel):
@@ -86,6 +92,8 @@ class ChatModel(BaseModel):
     session_type: Optional[str] = None
     expires_at: Optional[int] = None
     key_version: Optional[str] = None
+    source_domain: Optional[str] = None
+    agent_tier: Optional[str] = None
 
 
 ####################
@@ -991,6 +999,27 @@ class ChatTable:
                 return True
         except Exception:
             return False
+
+
+    def delete_expired_guest_chats(self) -> int:
+        """
+        Delete guest chat records whose TTL has elapsed (expires_at < now).
+        Returns the number of rows deleted.
+        Called by the background purge task wired in main.py (architecture §3).
+        """
+        try:
+            with get_db() as db:
+                now = int(time.time())
+                result = (
+                    db.query(Chat)
+                    .filter(Chat.expires_at.isnot(None), Chat.expires_at < now)
+                    .delete(synchronize_session=False)
+                )
+                db.commit()
+                return result
+        except Exception as e:
+            log.error(f"Guest chat purge failed: {e}")
+            return 0
 
 
 Chats = ChatTable()

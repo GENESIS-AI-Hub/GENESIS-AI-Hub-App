@@ -912,3 +912,28 @@ async def chat_action(request: Request, action_id: str, form_data: dict, user: A
             return Exception(f"Error: {e}")
 
     return data
+
+
+_GUEST_PURGE_INTERVAL_SECONDS = 3600  # run once per hour
+
+
+async def periodic_guest_chat_purge() -> None:
+    """
+    Background task that periodically deletes expired guest chat records.
+
+    Guest chats carry an expires_at epoch timestamp (24-hour TTL from creation).
+    This loop wakes up hourly and removes any rows where expires_at < now,
+    preventing unbounded growth of ephemeral guest data (architecture §3).
+    """
+    from open_webui.models.chats import Chats
+
+    log = logging.getLogger(__name__)
+    log.info("Guest chat purge task started (interval: %ds)", _GUEST_PURGE_INTERVAL_SECONDS)
+    while True:
+        await asyncio.sleep(_GUEST_PURGE_INTERVAL_SECONDS)
+        try:
+            deleted = Chats.delete_expired_guest_chats()
+            if deleted:
+                log.info("Guest chat purge: removed %d expired record(s)", deleted)
+        except Exception as exc:
+            log.error("Guest chat purge error: %s", exc)
