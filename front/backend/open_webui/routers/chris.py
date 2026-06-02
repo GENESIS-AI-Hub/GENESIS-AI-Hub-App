@@ -14,7 +14,7 @@ import uuid
 from typing import Optional
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from open_webui.constants import ERROR_MESSAGES
