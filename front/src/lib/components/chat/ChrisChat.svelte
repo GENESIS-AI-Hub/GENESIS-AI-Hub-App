@@ -9,6 +9,7 @@
 		type SuggestionItem,
 		type HistoryMessage
 	} from '$lib/apis/chris';
+	import { createGuestSession } from '$lib/apis/auths';
 
 	import { showSidebar } from '$lib/stores';
 
@@ -68,11 +69,48 @@
 		pendingAgent: null
 	};
 
+	// Guest session state (§3 guest / headless session handling)
+	let isGuest = false;
+	// When a guest hits an authenticated/privileged agent, show an inline login prompt
+	let loginRequired = false;
+	let loginRequiredTier: 'authenticated' | 'privileged' = 'authenticated';
+
 	// ── Lifecycle ──────────────────────────────────────────────────────────────
 
 	onMount(async () => {
+		await initSession();
 		await fetchInstalledAgents();
 	});
+
+	async function initSession() {
+		if (!localStorage.token) {
+			// No session token — issue an ephemeral guest JWT so the FAB works
+			// immediately for unauthenticated visitors (§3 guest session handling).
+			// localStorage stores it as a convenience; §6.1 prefers in-memory for
+			// production but the existing app already uses localStorage for all tokens.
+			const guest = await createGuestSession().catch(() => null);
+			if (guest?.token) {
+				localStorage.token = guest.token;
+				isGuest = true;
+			}
+		} else {
+			isGuest = _isGuestToken(localStorage.token);
+		}
+	}
+
+	function _isGuestToken(token: string): boolean {
+		try {
+			const payload = JSON.parse(atob(token.split('.')[1]));
+			return payload?.session_type === 'guest';
+		} catch {
+			return false;
+		}
+	}
+
+	function goToLogin() {
+		const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
+		window.location.href = `/auth?redirect=${returnUrl}`;
+	}
 
 	// ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -152,17 +190,30 @@
 					suggestions = await getChrisSuggestions(localStorage.token, text, 3);
 				}
 			}
-		} catch (e) {
-			messages = [
-				...messages,
-				{
-					id: uniqueId(),
-					role: 'assistant',
-					content: 'Chris is temporarily unavailable. Please try again shortly.',
-					routed_to: null,
-					agent_name: null
-				}
-			];
+		} catch (e: unknown) {
+			// Structured API errors carry a `code` field (§4 tier enforcement).
+			const apiErr = e as { code?: string; required_tier?: string } | null;
+
+			if (apiErr?.code === 'tier_required' || apiErr?.code === 'step_up_required') {
+				// Guest or lower-tier user hit an agent that requires authentication.
+				// Show the inline login/step-up prompt instead of an error bubble.
+				loginRequired = true;
+				loginRequiredTier =
+					(apiErr.required_tier as 'authenticated' | 'privileged') ?? 'authenticated';
+				// Remove the user message we just added so they can retry after login
+				messages = messages.slice(0, -1);
+			} else {
+				messages = [
+					...messages,
+					{
+						id: uniqueId(),
+						role: 'assistant',
+						content: 'Chris is temporarily unavailable. Please try again shortly.',
+						routed_to: null,
+						agent_name: null
+					}
+				];
+			}
 		} finally {
 			loading = false;
 			targetedAgent = null;
@@ -248,6 +299,16 @@
 		<Sparkles className="w-6 h-6 text-blue-500" />
 		<h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">Chris</h1>
 		<span class="text-sm text-gray-500 dark:text-gray-400">OpenBeavs AI Hub</span>
+
+		{#if isGuest}
+			<span
+				class="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium
+				       bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600"
+				title="You are browsing as a guest. Public agents only."
+			>
+				Guest
+			</span>
+		{/if}
 
 		{#if onSwitchUI}
 			<button
@@ -400,6 +461,50 @@
 			>
 				✕
 			</button>
+		</div>
+	{/if}
+
+	<!-- Inline login prompt — shown when a guest hits an authenticated/privileged agent (§3) -->
+	{#if loginRequired}
+		<div
+			class="flex items-start gap-3 mb-3 px-4 py-3 rounded-xl border
+			       bg-amber-50 dark:bg-amber-900/20
+			       border-amber-200 dark:border-amber-700
+			       text-amber-800 dark:text-amber-300"
+			role="alert"
+		>
+			<svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+				<path stroke-linecap="round" stroke-linejoin="round"
+					d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25z" />
+			</svg>
+			<div class="flex-1 min-w-0">
+				<p class="text-sm font-semibold">
+					{loginRequiredTier === 'privileged' ? 'Verified identity required' : 'OSU login required'}
+				</p>
+				<p class="text-xs mt-0.5 opacity-80">
+					{loginRequiredTier === 'privileged'
+						? 'This agent requires step-up authentication. Please sign in with your OSU account first.'
+						: 'This agent is available to Oregon State University students, staff, and faculty.'}
+				</p>
+				<div class="flex gap-2 mt-2">
+					<button
+						class="px-3 py-1.5 rounded-lg text-xs font-semibold
+						       bg-amber-700 dark:bg-amber-600 text-white
+						       hover:bg-amber-800 dark:hover:bg-amber-500 transition-colors"
+						on:click={goToLogin}
+					>
+						Sign in with OSU
+					</button>
+					<button
+						class="px-3 py-1.5 rounded-lg text-xs font-medium
+						       bg-transparent text-amber-700 dark:text-amber-400
+						       hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+						on:click={() => { loginRequired = false; targetedAgent = null; }}
+					>
+						Dismiss
+					</button>
+				</div>
+			</div>
 		</div>
 	{/if}
 

@@ -253,10 +253,29 @@ def get_optional_user():
 def decode_token(token: str) -> Optional[dict]:
     return None
 
+class GuestUser:
+    """Stub matching open_webui.utils.auth.GuestUser for tests."""
+    id: str = ""
+    role: str = "pending"
+    email: str = ""
+    name: str = "Guest"
+    profile_image_url: str = "/user.png"
+    session_type: str = "guest"
+    osu_role: str = "public"
+    key_ref = None
+
+    def __init__(self) -> None:
+        pass
+
+async def get_guest_or_verified_user():
+    raise HTTPException(status_code=401, detail="Not authenticated")
+
+_auth_mod.GuestUser = GuestUser
 _auth_mod.get_verified_user = get_verified_user
 _auth_mod.get_admin_user = get_admin_user
 _auth_mod.get_current_user = get_current_user
 _auth_mod.get_optional_user = get_optional_user
+_auth_mod.get_guest_or_verified_user = get_guest_or_verified_user
 _auth_mod.decode_token = decode_token
 # create_token and decode_token are also used by routers/chats.py
 _auth_mod.create_token = MagicMock(return_value="stub-token")
