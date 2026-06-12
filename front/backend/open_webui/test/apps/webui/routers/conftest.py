@@ -105,6 +105,8 @@ for _sub in [
     "open_webui.utils.payload",
     "open_webui.utils.response",
     "open_webui.utils.filter",
+    "open_webui.utils.misc",
+    "open_webui.utils.webhook",
     "open_webui.routers.audio",
     "open_webui.routers.images",
     "open_webui.routers.ollama",
@@ -115,6 +117,14 @@ for _sub in [
     "open_webui.routers.knowledge",
 ]:
     sys.modules.setdefault(_sub, MagicMock())
+
+# ── 7b. open_webui.utils.encryption — stub with no-op functions ──────────────
+_enc_mod = types.ModuleType("open_webui.utils.encryption")
+_enc_mod.ENABLE_CHAT_ENCRYPTION = False
+_enc_mod.create_user_key_ref = MagicMock(return_value=None)
+_enc_mod.encrypt_chat_content = MagicMock(return_value=(b"", b""))
+_enc_mod.decrypt_chat_content = MagicMock(return_value={})
+sys.modules["open_webui.utils.encryption"] = _enc_mod
 
 # ── 8. fake open_webui.models.agents ─────────────────────────────────────────
 from pydantic import BaseModel as _BaseModel
@@ -248,8 +258,34 @@ _auth_mod.get_admin_user = get_admin_user
 _auth_mod.get_current_user = get_current_user
 _auth_mod.get_optional_user = get_optional_user
 _auth_mod.decode_token = decode_token
+# create_token and decode_token are also used by routers/chats.py
+_auth_mod.create_token = MagicMock(return_value="stub-token")
 sys.modules["open_webui.utils.auth"] = _auth_mod
+
+# Pre-register open_webui.utils.privacy using the real source file so that
+# test_privacy.py can import extract_source_domain even when open_webui.utils
+# is later overwritten with a MagicMock (which prevents normal filesystem imports).
+import importlib.util as _importlib_util
+_privacy_path = os.path.join(_BACKEND, "open_webui", "utils", "privacy.py")
+if os.path.exists(_privacy_path):
+    _privacy_spec = _importlib_util.spec_from_file_location(
+        "open_webui.utils.privacy", _privacy_path
+    )
+    _privacy_real = _importlib_util.module_from_spec(_privacy_spec)
+    sys.modules["open_webui.utils.privacy"] = _privacy_real
+    _privacy_spec.loader.exec_module(_privacy_real)
+
 sys.modules.setdefault("open_webui.utils", MagicMock())
+
+# ── 10b. fake open_webui.models.chats — minimal stubs for import ─────────────
+for _m in [
+    "open_webui.models.chats",
+    "open_webui.models.tags",
+    "open_webui.models.folders",
+    "open_webui.models.groups",
+    "open_webui.models.users",
+]:
+    sys.modules.setdefault(_m, MagicMock())
 
 # ── 11. fake open_webui.utils.a2a_runtime ────────────────────────────────────
 _a2a_runtime_mod = types.ModuleType("open_webui.utils.a2a_runtime")

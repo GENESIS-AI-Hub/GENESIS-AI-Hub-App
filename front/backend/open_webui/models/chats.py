@@ -61,6 +61,12 @@ class Chat(Base):
     # key_version: KMS key version used to wrap encrypted_dek. Allows targeted
     # re-encryption jobs after key rotation without touching all records.
     key_version = Column(String, nullable=True)
+    # source_domain: originating OSU domain FAB (e.g. "library.oregonstate.edu").
+    # Used for cross-domain chat isolation and opt-in sharing (architecture §6).
+    source_domain = Column(String, nullable=True)
+    # agent_tier: highest-access tier agent touched in this conversation.
+    # Recorded so audit logs and PII scrubber jobs know the sensitivity level.
+    agent_tier = Column(String, nullable=True)
 
 
 class ChatModel(BaseModel):
@@ -86,6 +92,8 @@ class ChatModel(BaseModel):
     session_type: Optional[str] = None
     expires_at: Optional[int] = None
     key_version: Optional[str] = None
+    source_domain: Optional[str] = None
+    agent_tier: Optional[str] = None
 
 
 ####################
@@ -155,6 +163,7 @@ class ChatTable:
         form_data: ChatForm,
         key_ref: Optional[str] = None,
         session_type: Optional[str] = "authenticated",
+        source_domain: Optional[str] = None,
     ) -> Optional[ChatModel]:
         """
         Insert a new chat record.
@@ -162,6 +171,10 @@ class ChatTable:
         When ENABLE_CHAT_ENCRYPTION is true and key_ref is provided, the chat
         content is stored encrypted (AES-256 envelope encryption). The plaintext
         `chat` column is set to None so only the ciphertext is persisted.
+
+        source_domain: the originating OSU domain FAB (e.g. "library.oregonstate.edu").
+        Stored for cross-domain isolation (§6). Populated from the session JWT's
+        source_domain claim, with fallback to the HTTP Origin/Referer header.
         """
         with get_db() as db:
             id = str(uuid.uuid4())
@@ -191,6 +204,7 @@ class ChatTable:
                 key_ref=stored_key_ref,
                 encrypted_dek=encrypted_dek,
                 content_enc=content_enc,
+                source_domain=source_domain,
             )
             db.add(result)
             db.commit()
@@ -991,6 +1005,27 @@ class ChatTable:
                 return True
         except Exception:
             return False
+
+
+    def delete_expired_guest_chats(self) -> int:
+        """
+        Delete guest chat records whose TTL has elapsed (expires_at < now).
+        Returns the number of rows deleted.
+        Called by the background purge task wired in main.py (architecture §3).
+        """
+        try:
+            with get_db() as db:
+                now = int(time.time())
+                result = (
+                    db.query(Chat)
+                    .filter(Chat.expires_at.isnot(None), Chat.expires_at < now)
+                    .delete(synchronize_session=False)
+                )
+                db.commit()
+                return result
+        except Exception as e:
+            log.error(f"Guest chat purge failed: {e}")
+            return 0
 
 
 Chats = ChatTable()

@@ -4,11 +4,11 @@
 
 	const TIER_CONFIG = {
 		public: {
-			label: 'Public',
-			icon: '🌐',
-			bg: 'bg-emerald-100 dark:bg-emerald-900/40',
-			text: 'text-emerald-700 dark:text-emerald-300',
-			border: 'border-emerald-200 dark:border-emerald-700'
+			label: 'Provisional',
+			icon: '⚠️',
+			bg: 'bg-red-100 dark:bg-red-900/40',
+			text: 'text-red-700 dark:text-red-300',
+			border: 'border-red-200 dark:border-red-700'
 		},
 		authenticated: {
 			label: 'OSU Login',
@@ -19,10 +19,10 @@
 		},
 		privileged: {
 			label: 'Verified',
-			icon: '🔒',
-			bg: 'bg-amber-100 dark:bg-amber-900/40',
-			text: 'text-amber-700 dark:text-amber-300',
-			border: 'border-amber-200 dark:border-amber-700'
+			icon: '✅',
+			bg: 'bg-green-100 dark:bg-green-900/40',
+			text: 'text-green-700 dark:text-green-300',
+			border: 'border-green-200 dark:border-green-700'
 		}
 	} as const;
 
@@ -33,7 +33,7 @@
 	class="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border
 		{config.bg} {config.text} {config.border}
 		{locked ? 'opacity-75' : ''}"
-	title="Access tier: {tier}"
+	title="Trust status: {config.label}"
 >
 	<span aria-hidden="true">{config.icon}</span>
 	{config.label}
