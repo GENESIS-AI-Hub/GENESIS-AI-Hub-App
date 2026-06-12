@@ -89,7 +89,15 @@ async def _generate_chris_chat_completion(
         id = "system"
         role = "admin"
 
+    # Construct a minimal Starlette Request so chris_message's Request parameter
+    # is satisfied. _FakeUser.role='admin' gives privileged scope regardless of
+    # JWT, so the empty headers/cookies here are safe.
+    from starlette.requests import Request as StarletteRequest
+    _mock_scope = {"type": "http", "method": "POST", "path": "/", "query_string": b"", "headers": []}
+    _mock_request = StarletteRequest(_mock_scope)
+
     result = await chris_message(
+        request=_mock_request,
         form_data=ChrisMessageForm(message=user_text, history=history),
         user=_FakeUser(),
     )
