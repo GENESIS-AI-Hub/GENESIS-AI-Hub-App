@@ -1,5 +1,34 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
 
+export type GuestSessionResponse = {
+	token: string;
+	token_type: string;
+	expires_at: number;
+	session_type: 'guest';
+};
+
+/**
+ * Issue an ephemeral guest JWT for unauthenticated FAB visitors (§3 guest sessions).
+ * No credentials required. The returned token grants public-tier agent access only.
+ */
+export const createGuestSession = async (): Promise<GuestSessionResponse | null> => {
+	const res = await fetch(`${WEBUI_API_BASE_URL}/auths/guest`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		credentials: 'include'
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			console.error('createGuestSession error:', err);
+			return null;
+		});
+
+	return res;
+};
+
 export const getAdminDetails = async (token: string) => {
 	let error = null;
 

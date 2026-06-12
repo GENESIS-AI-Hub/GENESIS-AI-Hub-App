@@ -1,0 +1,8 @@
+.venv/
+.env
+.DS_Store
+API-Key
+tmp/
+__pycache__/
+.adk/
+certs/

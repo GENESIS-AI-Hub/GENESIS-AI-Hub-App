@@ -278,7 +278,7 @@ EOF
 echo -e "${GREEN}✓ Configuration saved to: $ENV_FILE${NC}"
 
 # Create proxy start script
-PROXY_SCRIPT="$(dirname "$0")/../start_cloud_sql_proxy.sh"
+PROXY_SCRIPT="$(dirname "$0")/start_cloud_sql_proxy.sh"
 mkdir -p "$(dirname "$PROXY_SCRIPT")"
 cat > "$PROXY_SCRIPT" << EOF
 #!/bin/bash
@@ -315,7 +315,7 @@ echo "2. Start Cloud SQL Proxy (in a separate terminal):"
 echo "   $PROXY_SCRIPT"
 echo ""
 echo "3. Copy the generated environment file:"
-echo "   cp $ENV_FILE $(dirname "$0")/front/.env"
+echo "   cp $ENV_FILE $(dirname "$0")/../front/.env"
 echo ""
 echo "4. Run the migration script:"
 echo "   ./migrate_to_postgres.sh"

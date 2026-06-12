@@ -61,6 +61,55 @@ router = APIRouter()
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MAIN"])
 
+_GUEST_SESSION_TTL_SECONDS = 24 * 3600  # 24 hours (§3 guest data retention)
+
+############################
+# GuestSession
+############################
+
+
+class GuestSessionResponse(BaseModel):
+    token: str
+    token_type: str = "Bearer"
+    expires_at: int
+    session_type: str = "guest"
+
+
+@router.post("/guest", response_model=GuestSessionResponse)
+async def create_guest_session(request: Request) -> GuestSessionResponse:
+    """Issue an ephemeral public-scope JWT for unauthenticated FAB visitors (§3).
+
+    No OSU identity or prior authentication required.  The returned token grants
+    access only to public-tier agents.  Guest chat records carry a 24-hour TTL
+    and are purged by the background job wired in main.py.
+
+    Key generation: for production, ENABLE_CHAT_ENCRYPTION=true triggers a real
+    ephemeral key via GCP Cloud KMS.  Without KMS the token carries key_ref=null
+    and chats are stored unencrypted (development-safe; not for production PII).
+
+    TODO(#141): replace the ephemeral key stub with a real KMS call once the
+    OSU OIDC + GCP Cloud KMS setup is confirmed (#141 / #142).
+    """
+    from open_webui.utils.privacy import extract_source_domain
+
+    now = int(time.time())
+    expires_at = now + _GUEST_SESSION_TTL_SECONDS
+    source_domain = extract_source_domain(request)
+
+    guest_token = create_token(
+        data={
+            "session_type": "guest",
+            "osu_role": "public",
+            "scope": ["public"],
+            "source_domain": source_domain,
+            "key_ref": None,  # TODO(#141): real ephemeral KMS key
+        },
+        expires_delta=timedelta(seconds=_GUEST_SESSION_TTL_SECONDS),
+    )
+
+    return GuestSessionResponse(token=guest_token, expires_at=expires_at)
+
+
 ############################
 # GetSessionUser
 ############################

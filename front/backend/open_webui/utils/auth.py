@@ -29,6 +29,26 @@ from passlib.context import CryptContext
 
 logging.getLogger("passlib").setLevel(logging.ERROR)
 
+
+class GuestUser:
+    """Synthetic user object for unauthenticated FAB visitors (§3 guest sessions).
+
+    Not backed by a database row.  role="pending" maps to the "public" trust tier
+    in _get_user_scope(), so guests can only access public-tier agents.
+    """
+
+    id: str = ""
+    role: str = "pending"
+    email: str = ""
+    name: str = "Guest"
+    profile_image_url: str = "/user.png"
+    session_type: str = "guest"
+    osu_role: str = "public"
+    key_ref: Optional[str] = None
+
+    def __init__(self) -> None:
+        pass
+
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["OAUTH"])
 
@@ -278,3 +298,43 @@ async def get_optional_user(
         return get_current_user(request, background_tasks, cred)
     except HTTPException:
         return None
+
+
+async def get_guest_or_verified_user(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    auth_token: HTTPAuthorizationCredentials = Depends(bearer_security),
+) -> Union[GuestUser, object]:
+    """Accept both authenticated users and FAB guest-session holders (§3).
+
+    - Valid guest JWT (session_type="guest") → returns GuestUser (no DB lookup).
+      GuestUser.role="pending" maps to "public" scope; _enforce_tier will block
+      any agent that requires "authenticated" or "privileged" tier.
+    - Valid regular JWT → falls through to standard get_verified_user check.
+    - No/invalid token → raises 403.
+
+    Use this as a FastAPI dependency on endpoints that guests are allowed to
+    reach but where tier enforcement governs what they can actually do.
+    """
+    token: Optional[str] = None
+    if auth_token is not None:
+        token = auth_token.credentials
+    if not token and "token" in request.cookies:
+        token = request.cookies.get("token")
+    if not token:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authenticated")
+
+    # Check for guest JWT before hitting the DB
+    if not token.startswith("sk-"):
+        payload = decode_token(token)
+        if payload and payload.get("session_type") == "guest":
+            return GuestUser()
+
+    # Standard authenticated path
+    user = get_current_user(request, background_tasks, auth_token)
+    if user.role not in {"user", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+        )
+    return user

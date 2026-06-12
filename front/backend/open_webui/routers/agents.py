@@ -30,6 +30,7 @@ from open_webui.constants import ERROR_MESSAGES
 from open_webui.utils.auth import (
     decode_token,
     get_admin_user,
+    get_guest_or_verified_user,
     get_optional_user,
     get_verified_user,
 )
@@ -190,11 +191,19 @@ def _enforce_tier(
         _consume_elevated_token(token_hash, elevated_until)
 
     # OSU role restriction check — seam for #141 (OSU OIDC integration).
+    # Only meaningful for agents that require at least "authenticated" tier:
+    # public-tier agents are available to everyone and cannot meaningfully restrict
+    # by OSU role (a public agent with required_role is a misconfiguration).
     # Reads osu_role from JWT payload when available; falls back to user attribute.
     # Until #141 lands, jwt_payload.osu_role is None and user.osu_role is None,
     # so role-restricted agents (required_role set) remain blocked for all
     # non-admin users.
-    if agent.required_role and user is not None and getattr(user, "role", None) != "admin":
+    if (
+        agent.required_role
+        and required >= _TIER_ORDER["authenticated"]
+        and user is not None
+        and getattr(user, "role", None) != "admin"
+    ):
         user_osu_role = (jwt_payload or {}).get("osu_role") or getattr(user, "osu_role", None)
         if user_osu_role != agent.required_role:
             raise HTTPException(
@@ -247,8 +256,13 @@ class SendMessageToAgentForm(BaseModel):
 
 
 @router.get("/", response_model=List[AgentResponse])
-async def get_agents(user=Depends(get_verified_user)):
-    """Get all active agents"""
+async def get_agents(user=Depends(get_guest_or_verified_user)):
+    """Get all active agents.
+
+    Accessible to guest users so the ChrisChat agent panel populates for FAB
+    visitors without an OSU account. The trust_tier field on each AgentResponse
+    lets the frontend label which agents the guest can actually send messages to.
+    """
     agents = Agents.get_agents()
     return [AgentResponse(**agent.model_dump()) for agent in agents]
 

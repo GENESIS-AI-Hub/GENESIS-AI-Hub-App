@@ -1,0 +1,14 @@
+{
+  "cyrano-001": {
+    "type": "agent",
+    "name": "Cyrano de Bergerac",
+    "endpoint": "https://localhost:8002",
+    "status": "approved",
+    "trust_badge_hash": "d1d884eb912a91e443dd14cab5d7ebfbb98cd48c8c259243beda89d08c7a1566"
+  },
+  "chris-001": {
+    "type": "client",
+    "name": "Chris (CLI)",
+    "chris_credential_hash": "6a53358b468b042cacc34d61633563ac4ba9937f4d6ff54ae44793226b823af4"
+  }
+}

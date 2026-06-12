@@ -28,6 +28,11 @@ Complete setup for migrating Genesis AI Hub from local SQLite to Google Cloud SQ
    - Network topology
    - Security model visualization
 
+5. **[SETUP_GCP_E2E.md](./SETUP_GCP_E2E.md)** COMPLETE E2E SETUP
+   - Full GCP setup from zero to production
+   - Covers Cloud SQL, GCS, Cloud Run, and Microsoft SSO
+   - Use this for a fresh deployment on any GCP project
+
 ## 🎯 Quick Answer to Your Questions
 
 ### ✅ Is Google Cloud SQL for PostgreSQL compatible?

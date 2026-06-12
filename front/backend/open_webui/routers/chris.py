@@ -14,14 +14,15 @@ import uuid
 from typing import Optional
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.models.agents import AgentModel, Agents
 from open_webui.models.registry import RegistryAgents
-from open_webui.utils.auth import get_verified_user
+from open_webui.utils.auth import get_guest_or_verified_user, get_verified_user
 from open_webui.utils.chris_gemini import chat as gemini_chat
+from open_webui.routers.agents import _enforce_tier, _extract_request_jwt
 
 log = logging.getLogger(__name__)
 
@@ -200,15 +201,18 @@ def _score_registry_agent(query_words: set[str], agent) -> int:
 
 @router.post("/message", response_model=ChrisMessageResponse)
 async def chris_message(
+    request: Request,
     form_data: ChrisMessageForm,
-    user=Depends(get_verified_user),
+    user=Depends(get_guest_or_verified_user),
 ) -> ChrisMessageResponse:
     """Route a user message to the best installed agent, or answer directly via Gemini.
 
     1. Fetch the user's installed agents.
     2. If agents exist, ask Gemini which one should handle the query.
-    3. Call the selected agent via A2A JSON-RPC.
-    4. On failure or if no agent fits, fall back to a direct Gemini answer.
+    3. Enforce trust tier (§4) before calling the selected agent — guest callers
+       are blocked from authenticated/privileged agents here.
+    4. Call the selected agent via A2A JSON-RPC.
+    5. On failure or if no agent fits, fall back to a direct Gemini answer.
     """
     user_message = form_data.message.strip()
     if not user_message:
@@ -256,6 +260,20 @@ async def chris_message(
 
     # ── Step 2a: delegate to selected agent ───────────────────────────────────
     if selected_agent:
+        # Enforce trust tier (§4) before any agent logic runs.
+        # This is the scope-check gate for the Chris routing path.
+        # _enforce_tier raises HTTPException 403 on tier mismatch — callers
+        # (ChrisChat.send) should detect code="tier_required" and show the
+        # inline login/step-up prompt rather than treating it as a chat error.
+        _jwt = _extract_request_jwt(request)
+        _enforce_tier(
+            selected_agent,
+            user,
+            elevated_until=_jwt.get("elevated_until") if _jwt else None,
+            raw_token=request.headers.get("Authorization", "").removeprefix("Bearer ").strip() or None,
+            jwt_payload=_jwt,
+        )
+
         try:
             agent_reply = _call_agent_a2a(selected_agent, user_message)
             return ChrisMessageResponse(
@@ -263,6 +281,8 @@ async def chris_message(
                 agent_name=selected_agent.name,
                 response=agent_reply,
             )
+        except HTTPException:
+            raise  # re-raise tier failures immediately
         except Exception as e:
             log.warning(
                 f"Agent {selected_agent.id} unreachable ({e}), falling back to Chris."

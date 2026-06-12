@@ -215,7 +215,7 @@ GOOGLE_APPLICATION_CREDENTIALS_JSON='paste-json-content-here'
 # Data Directory (local cache only)
 # ============================================
 
-DATA_DIR=/Users/minsoup/Desktop/GENESIS-AI-Hub-App/front/backend/data
+DATA_DIR=./front/backend/data
 
 # ============================================
 # Application Settings
@@ -257,7 +257,7 @@ cat ~/genesis-ai-hub-key.json | jq -c '.'
 ### Step 4.1: Export SQLite Data
 
 ```bash
-cd /Users/minsoup/Desktop/GENESIS-AI-Hub-App/front/backend/data
+cd front/backend/data
 
 # Export SQLite to SQL dump
 sqlite3 webui.db .dump > webui_export.sql
@@ -335,7 +335,7 @@ PGPASSWORD=$DB_PASSWORD psql -h localhost -U postgres -d webui -c "SELECT versio
 ### Step 5.2: Test Application
 
 ```bash
-cd /Users/minsoup/Desktop/GENESIS-AI-Hub-App/front/backend
+cd front/backend
 
 # Start application
 ./start.sh
@@ -355,7 +355,7 @@ Check logs for:
 
 ```bash
 # Build container
-cd /Users/minsoup/Desktop/GENESIS-AI-Hub-App/front
+cd front
 gcloud builds submit --tag gcr.io/$PROJECT_ID/genesis-ai-hub
 
 # Deploy to Cloud Run

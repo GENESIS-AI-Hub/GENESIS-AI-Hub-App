@@ -33,7 +33,7 @@ try:
         load_dotenv(str(_front_env))
 
     # Also search upward from this file's directory so that
-    # GENESIS-AI-Hub/.env (project root) is always picked up too.
+    # OpenBeavs/.env (project root) is always picked up too.
     load_dotenv(find_dotenv(), override=False)
 except ImportError:
     print("dotenv not installed, skipping...")

@@ -7,7 +7,7 @@ This guide explains how to access and manage the tickets database where user-sub
 The tickets are stored in the main Open WebUI SQLite database:
 
 ```
-c:\Users\galav\Documents\Github-Projects\GENESIS-AI-Hub\front\backend\open_webui\data\webui.db
+<path-to-OpenBeavs>\front\backend\data\webui.db
 ```
 
 ## Method 1: Using SQLite Command Line (Recommended)
@@ -28,7 +28,7 @@ winget install SQLite.SQLite
 
 ```powershell
 # Navigate to the database directory
-cd c:\Users\galav\Documents\Github-Projects\GENESIS-AI-Hub\front\backend\open_webui\data
+cd <path-to-OpenBeavs>\front\backend\data
 
 # Open the database
 sqlite3 webui.db
@@ -146,7 +146,7 @@ winget install DB.Browser.for.SQLite
 
 1. Launch DB Browser for SQLite
 2. Click "Open Database"
-3. Navigate to: `c:\Users\galav\Documents\Github-Projects\GENESIS-AI-Hub\front\backend\open_webui\data\webui.db`
+3. Navigate to: `<path-to-OpenBeavs>\front\backend\data\webui.db`
 4. Click the "Browse Data" tab
 5. Select "ticket" from the Table dropdown
 
@@ -167,7 +167,7 @@ import json
 from datetime import datetime
 
 # Connect to database
-conn = sqlite3.connect('c:/Users/galav/Documents/Github-Projects/GENESIS-AI-Hub/front/backend/open_webui/data/webui.db')
+conn = sqlite3.connect('<path-to-OpenBeavs>/front/backend/data/webui.db')
 conn.row_factory = sqlite3.Row
 cursor = conn.cursor()
 
